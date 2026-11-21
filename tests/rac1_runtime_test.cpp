@@ -13,7 +13,7 @@ openrac_frame_fn frame_fn;
 openrac_pad_fn pad_fn;
 void* frame_user;
 void* pad_user;
-std::int32_t (*draw_fn)(std::int32_t);
+void (*draw_fn)();
 int balance=100, plays=0, last_sound=-1, originals=0, prints=0;
 bool visible=false;
 std::vector<std::string> lines;
@@ -23,7 +23,7 @@ void check(bool ok, const char* why) {
 }
 openrac::Memory memory() { return openrac::Memory(ram.data()); }
 void print(int x, int y, std::uint64_t, openrac::gaddr text, int) {
-    check(x==4 && (y==0 || y==14 || y==30), "the three lines fit the Buy-monitor capture");
+    check((x==11 && y==2) || (x==10 && y==1), "the native prompt is at the visible top of the icon carousel");
     lines.emplace_back(reinterpret_cast<const char*>(ram.data()+text));
     ++prints;
 }
@@ -31,16 +31,16 @@ int sound(int id, int mode, openrac::gaddr owner) {
     check(mode==0 && owner==0x6000u, "RAC1 native sound mode and owner");
     ++plays; last_sound=id; return 1;
 }
-std::int32_t original(std::int32_t) { ++originals; return 0x7000; }
+void original() { ++originals; }
 void* function(const char* name) {
     if (std::string(name)==disc->print) return reinterpret_cast<void*>(&print);
     if (std::string(name)==disc->sound) return reinterpret_cast<void*>(&sound);
     return nullptr;
 }
 int hook(openrac_mod*, const char* id, const char* signature, void* replacement, void** next) {
-    check(std::string(id)=="rac1.text.msg_string" && std::string(signature)=="i32(i32)",
-          "RAC1 text hook installed for native Buy monitor");
-    draw_fn=reinterpret_cast<std::int32_t(*)(std::int32_t)>(replacement); *next=reinterpret_cast<void*>(&original); return 0;
+    check(std::string(id)=="rac1.vendor.icon_strip.draw" && std::string(signature)=="void()",
+          "RAC1 native carousel capture hook installed");
+    draw_fn=reinterpret_cast<void(*)()>(replacement); *next=reinterpret_cast<void*>(&original); return 0;
 }
 void pad(bool down) {
     std::uint8_t report[2]={0xFF,static_cast<std::uint8_t>(down?0x7F:0xFF)};
@@ -80,16 +80,15 @@ int main(int argc, char** argv) {
     m.write<std::uint16_t>(disc->table+2*0x18+8,5);
     m.write<std::uint16_t>(disc->table+2*0x18+0xA,10);
     m.write<std::uint16_t>(disc->table+2*0x18+0xE,10);
-    const char native_label[]="\x10 Buy";
-    for (std::size_t i=0; i<sizeof native_label; ++i) m.write<char>(0x7000+i,native_label[i]);
     openrac::Mod mod(&api,reinterpret_cast<openrac_mod*>(1));
-    load_rac1(mod); tick(); const auto replaced=draw_fn(0x5239);
-    check(originals==1 && prints==3 && lines[0]=="\x10 Buy" && lines[1]=="\x13 Buy all" && lines[2]=="35 bolts",
-          "localized normal Buy, native buy-all glyph and exact quote drawn on separate lines");
-    check(replaced==0x7005 && m.read<char>(replaced)=='\0' &&
-          std::string(reinterpret_cast<const char*>(ram.data()+0x7000))==native_label,
-          "returns existing terminator without modifying original game message");
-    check(draw_fn(42)==0x7000 && prints==3,"unrelated messages pass through without a custom draw");
+    load_rac1(mod); tick();
+    draw_fn();
+    check(originals==1 && prints==2 &&
+          lines[0]=="\x10 Buy all - 35 bolts" && lines[1]==lines[0],
+          "draws native Square icon and exact quote after the original icon strip");
+    draw_fn();
+    check(originals==2 && prints==4,
+          "the native carousel remains intact and the hint renders every frame");
     check(visible && plays==0,"idle quote is silent and Android action available");
     pad(true); tick();
     check(balance==65 && m.read<std::int32_t>(disc->ammo+8)==10 && plays==1 && last_sound==7,
@@ -108,7 +107,8 @@ int main(int argc, char** argv) {
     pad(false); tick(); m.write<std::int32_t>(disc->vendor+0x5C,2);
     const int before=plays; pad(true); tick();
     check(plays==before && balance==5 && !visible,"manual dialog blocks transactions and touch action");
-    prints=0; check(draw_fn(0x5239)==0x7000 && prints==0,"manual dialog retains original text and hides custom prompt");
+    prints=0; draw_fn();
+    check(originals==3 && prints==0,"manual purchase dialog keeps normal carousel but hides custom hint");
     m.write<std::int32_t>(disc->vendor+0x5C,0);
     m.write<std::int32_t>(disc->mode,0); pad(false); tick(); pad(true); tick();
     check(plays==before && balance==5,"gameplay outside vendor blocks transactions");

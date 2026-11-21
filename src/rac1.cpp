@@ -19,6 +19,7 @@ bool s_touch = false;
 Hint s_hint = Hint::Hidden;
 int s_cost = 0;
 int s_notice = 0;
+bool s_prompt_logged = false;
 
 openrac::gaddr menu(const openrac::Mod& mod, const Disc& disc) {
     return mod.relocate_level(0, disc.vendor);
@@ -87,33 +88,46 @@ void tick(openrac::Mod& mod, const Disc& disc) {
     }
 }
 
-// The Buy-label pass is a separate captured texture. SDK 1.20 exposes
-// msg_string for its Buy label but not the draw pass itself. Use real
-// FontPrintSmall (not FontPrintCenterSmall) for three compact lines.
-void draw(openrac::Mod& mod, const Disc& disc, openrac::gaddr native_buy) {
+// SDK 1.20 does not expose RAC1's Buy-label drawing pass. The text-lookup
+// hook is not a reliable place to inject graphics: the native Buy label can
+// remain visible while the additional text is discarded by the capture.
+// Vendor_DrawIconStrip runs inside a known, visible native capture. Keep the
+// overlay at the very top of the carousel; the lower half is cropped.
+void draw(openrac::Mod& mod) {
     if (!s_show || s_hint == Hint::Hidden) return;
-    std::array<Candidate, kItems> entries{};
-    openrac::gaddr ammo = 0;
-    if (!collect(mod, disc, entries, ammo)) return;
-    char status[48];
+
+    char text[112];
     switch (s_hint) {
-        case Hint::Buy: std::snprintf(status, sizeof status, "%d bolts", s_cost); break;
-        case Hint::Partial: std::snprintf(status, sizeof status, "Part %d", s_cost); break;
-        case Hint::Full: std::snprintf(status, sizeof status, "Ammo full"); break;
-        case Hint::Insufficient: std::snprintf(status, sizeof status, "No bolts"); break;
-        case Hint::Purchased: std::snprintf(status, sizeof status, "Bought"); break;
-        default: return;
+        // \x10 is RAC1's native Square glyph, as used by its regular Buy prompt.
+        case Hint::Buy:
+            std::snprintf(text, sizeof text, "\x10 Buy all - %d bolts", s_cost);
+            break;
+        case Hint::Partial:
+            std::snprintf(text, sizeof text, "\x10 Buy all - %d bolts (partial)", s_cost);
+            break;
+        case Hint::Full:
+            std::snprintf(text, sizeof text, "\x10 Buy all - Ammo full");
+            break;
+        case Hint::Insufficient:
+            std::snprintf(text, sizeof text, "\x10 Buy all - No bolts");
+            break;
+        case Hint::Purchased:
+            std::snprintf(text, sizeof text, "\x10 Buy all - Bought");
+            break;
+        default:
+            return;
     }
-    openrac::StackFrame frame(mod, 96);
-    const auto line = [&](const char* label, int y) {
-        for (std::size_t i = 0; i <= std::char_traits<char>::length(label); ++i)
-            mod.memory().write<char>(frame.address() + static_cast<openrac::gaddr>(i), label[i]);
-        s_print(4, y, 0x80F0F0F0u, frame.address(), -1);
-    };
-    // Retain the localized native Buy label and PlayStation/Xbox font glyphs.
-    s_print(4, 0, 0x80F0F0F0u, native_buy, -1);
-    line("\x13 Buy all", 14);
-    line(status, 30);
+    openrac::StackFrame frame(mod, 128);
+    for (std::size_t i = 0; i <= std::char_traits<char>::length(text); ++i)
+        mod.memory().write<char>(frame.address() + static_cast<openrac::gaddr>(i), text[i]);
+
+    // Native RAC1 font; small shadow keeps it legible over the carousel.
+    s_print(11, 2, 0x80000000u, frame.address(), -1);
+    s_print(10, 1, 0x80F0F0F0u, frame.address(), -1);
+    if (!s_prompt_logged) {
+        mod.info("Vendor Buy All: RAC1 vendor carousel prompt draw reached (HUD enabled)");
+        s_prompt_logged = true;
+    }
 }
 
 } // namespace
@@ -126,6 +140,7 @@ void load_rac1(openrac::Mod& mod) {
     s_down = s_pressed = s_touch = false;
     s_hint = Hint::Hidden;
     s_notice = s_cost = 0;
+    s_prompt_logged = false;
     s_show = mod.setting<bool>("show_hud");
     s_print = mod.required_function<Print>(disc->print);
     s_sound = mod.required_function<Sound>(disc->sound);
@@ -138,22 +153,10 @@ void load_rac1(openrac::Mod& mod) {
         s_down = down;
     });
     mod.on_frame([&mod, disc] { tick(mod, *disc); });
-    mod.hook<openrac::rac1::msg_string>([&mod, disc](auto original, std::int32_t id) -> std::int32_t {
-        const auto label = static_cast<openrac::gaddr>(original(id));
-        if (!label || (id != 0x5238 && id != 0x5239) || !s_show || s_hint == Hint::Hidden)
-            return static_cast<std::int32_t>(label);
-        std::array<Candidate, kItems> entries{};
-        openrac::gaddr ammo = 0;
-        if (!collect(mod, *disc, entries, ammo)) return static_cast<std::int32_t>(label);
-        // Suppress the game's default centered print only after our native
-        // draw. Point at its own NUL, never modify the original message.
-        for (openrac::gaddr n = 0; n < 512; ++n) {
-            if (mod.memory().read<char>(label + n) == '\0') {
-                draw(mod, *disc, label);
-                return static_cast<std::int32_t>(label + n);
-            }
-        }
-        return static_cast<std::int32_t>(label);
+    mod.hook<openrac::rac1::Vendor_DrawIconStrip>([&mod](auto original) {
+        // Native icons first, so our Buy All hint is captured on top of them.
+        original();
+        draw(mod);
     });
-    mod.info("Vendor Buy All 0.2.0-dev.4: RAC1 Square / Xbox X, native Buy-monitor prompt");
+    mod.info(std::string("Vendor Buy All 0.2.0-dev.5: RAC1 Square / Xbox X, native carousel prompt; HUD ") + (s_show ? "enabled" : "disabled"));
 }
