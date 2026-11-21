@@ -1,0 +1,2 @@
+# Native mod archives are merged across OSes; packaged text must be byte-identical.
+* text=auto eol=lf
