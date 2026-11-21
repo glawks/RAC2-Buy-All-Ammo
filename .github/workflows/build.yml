@@ -49,9 +49,6 @@ jobs:
           - {platform: macos-x86_64, runner: macos-15-intel, arch: x86_64}
           - platform: android-arm64
             runner: ubuntu-24.04
-            configure: >-
-              -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_LATEST_HOME/build/cmake/android.toolchain.cmake
-              -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-28
             skip_tests: true
     defaults:
       run:
@@ -78,7 +75,6 @@ jobs:
       - name: Configure
         env:
           TARGET_ARCH: ${{ matrix.arch }}
-          CROSS_CONFIG: ${{ matrix.configure }}
           SKIP_TESTS: ${{ matrix.skip_tests }}
         run: |
           OPTIONS=()
@@ -87,9 +83,13 @@ jobs:
           fi
           TESTING=ON
           if [ "$SKIP_TESTS" = "true" ]; then TESTING=OFF; fi
-          # CROSS_CONFIG comes from our static matrix above; split its CMake options.
+          if [ "${{ matrix.platform }}" = "android-arm64" ]; then
+            : "${ANDROID_NDK_LATEST_HOME:?Android NDK not available on runner}"
+            OPTIONS+=("-DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_LATEST_HOME/build/cmake/android.toolchain.cmake" \
+                     '-DANDROID_ABI=arm64-v8a' '-DANDROID_PLATFORM=android-28')
+          fi
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING="$TESTING" \
-            "${OPTIONS[@]}" $CROSS_CONFIG
+            "${OPTIONS[@]}"
       - name: Build
         run: cmake --build build --parallel
       - name: Run unit tests
