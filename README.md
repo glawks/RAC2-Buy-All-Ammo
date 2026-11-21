@@ -12,7 +12,7 @@ Press **Square** (PlayStation) or **X** (Xbox) in the vendor's main list to buy 
 
 ## Development build
 
-**0.2.0-dev.1** introduces RAC1 support and renames the mod ID from `rac2-buy-all-ammo` to **`vendor-buy-all`**. RAC2's purchase behaviour, native prompt and sounds were tested in-game during development. **RAC1 is a new port and still needs in-game testing**, including prompt visibility, vendor transitions, PDA prices, sounds and save/load behaviour.
+**0.2.0-dev.2** introduces RAC1 support and renames the mod ID from `rac2-buy-all-ammo` to **`vendor-buy-all`**. RAC2's purchase behaviour, native prompt and sounds were tested in-game during development. RAC1 purchases and both success/rejection sounds have also been confirmed in-game. **This build fixes the RAC1 prompt placement; its revised monitor layout still needs in-game testing**, along with PDA prices and save/load behaviour.
 
 Remove the old **RAC2 Buy All Ammo** installation before enabling **Vendor Buy All**. The new ID is a separate mod to the launcher; leaving both active can cause duplicate input handlers and prompts. Settings under the old ID are not migrated.
 
@@ -23,7 +23,7 @@ Remove the old **RAC2 Buy All Ammo** installation before enabling **Vendor Buy A
 
 ## Native prompts
 
-**RAC1:** The prompt is drawn in the lower half of the vendor's item-strip monitor capture, below the item icons. It uses RAC1's own small font and controller glyph. The Gadgetron PDA's alternate per-round price is used when its vendor price selector is active.
+**RAC1:** The normal Buy control, buy-all control and status occupy separate native text lines inside the Buy monitor. The prior placement below the carousel icons was cropped out by the monitor capture. It uses RAC1's own small font and controller glyph. The Gadgetron PDA's alternate per-round price is used when its vendor price selector is active.
 
 **RAC2:** A separate bordered box below the regular Buy control contains the buy-all prompt and status. Under Mod settings, **RAC2 vendor HUD position** can move it to the top or bottom right. **Show vendor ammo HUD** applies to both games.
 
@@ -42,7 +42,7 @@ Each push to **dev** builds six platforms and uploads downloadable Actions artif
 | macOS Intel | `macos-x86_64` |
 | Android ARM64 | `android-arm64` |
 
-Open **Actions → build → latest successful dev run → Artifacts → mod-release**. Extract the **`vendor-buy-all-0.2.0-dev.1.zip`** inside that artifact, then install that inner combined ZIP in OpenRAC's launcher. The outer Actions ZIP is not an installable mod. Separate platform ZIPs and `SHA256SUMS` are also included.
+Open **Actions → build → latest successful dev run → Artifacts → mod-release**. Extract the **`vendor-buy-all-0.2.0-dev.2.zip`** inside that artifact, then install that inner combined ZIP in OpenRAC's launcher. The outer Actions ZIP is not an installable mod. Separate platform ZIPs and `SHA256SUMS` are also included.
 
 The workflow uses the current repository name automatically, so renaming the GitHub repository to `vendor-buy-all` requires no additional workflow change. On **main**, a push with a new stable manifest version publishes a release after all six platform builds and packaging checks succeed. A development version, pull request or manual workflow run does not publish a release. Existing releases are preserved.
 
@@ -65,7 +65,7 @@ Tests cover bounded and partial purchases, invalid entries, full-ammo and insuff
 
 Each game has its own vendor adapter and native drawing path. Both share the purchase planner in `src/purchase_plan.hpp`. The gameplay tick reads the active vendor's ammo rows, computes a quote from the current balance, deducts its bounded total through the SDK's bolts interface and adds the purchased rounds on the game thread.
 
-RAC1 data and sound behaviour are based on `OpenRAC/rac1-decomp`'s `vendor_menu.c`, `game/ui/vendor.c`, and the per-disc addresses documented by OpenRAC's ammo-max and cheats mods. The native icon-strip draw hook appends the prompt after the normal icons without replacing their draw or purchase handlers.
+RAC1 data and sound behaviour are based on `OpenRAC/rac1-decomp`'s `vendor_menu.c`, `game/ui/vendor.c`, and the per-disc addresses documented by OpenRAC's ammo-max and cheats mods. A scoped message lookup hook draws the Buy monitor's localized original Buy label, native buy-all control and status, then returns the original string's existing terminator to prevent the normal windowed print drawing on top. It does not alter the game's message data or purchase handlers; outside the main vendor list it passes through unchanged.
 
 RAC2 uses its existing vendor list adapter and `Vendor_DrawList` hook. Sound IDs 7 (purchase) and 2 (rejection) use each game's own vendor owner and sound mode. The manifest names hooks by stable, game-qualified IDs so the launcher can load the correct adapter.
 

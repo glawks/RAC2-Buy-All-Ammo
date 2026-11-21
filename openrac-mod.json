@@ -2,7 +2,7 @@
   "format": 2,
   "id": "vendor-buy-all",
   "name": "Vendor Buy All",
-  "version": "0.2.0-dev.1",
+  "version": "0.2.0-dev.2",
   "author": "glawks",
   "description": "Buy all available ammunition for owned weapons with Square (Xbox X) at the Gadgetron or Megacorp vendor, at normal prices, with native button prompts and purchase feedback.",
   "license": "MIT",
@@ -19,7 +19,7 @@
     ]
   },
   "hooks": [
-    "rac1.vendor.icon_strip.draw",
+    "rac1.text.msg_string",
     "rac2.vendor.draw_list"
   ],
   "settings": [
@@ -49,7 +49,7 @@
           "name": "Top right"
         }
       ],
-      "description": "RAC2 prompt placement. RAC1 displays its prompt below the icons on the vendor monitor."
+      "description": "RAC2 prompt placement. RAC1 displays both Buy controls and status inside the Buy monitor."
     }
   ],
   "touch": "touch.json"
