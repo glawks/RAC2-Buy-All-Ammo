@@ -97,8 +97,9 @@ void draw_hud(openrac::Mod& mod) {
         default: return;
     }
     const bool left = s_hud_position == "vendor_left";
-    const float x = left ? 82.0f : 335.0f;
-    const float y = left ? 173.0f : s_hud_position == "top_right" ? 35.0f : 391.0f;
+    // Vendor panels use the centred 4:3 game UI, not the stretched overlay canvas.
+    const float centre_x = left ? 76.0f : 410.0f;
+    const float y = left ? 165.0f : s_hud_position == "top_right" ? 35.0f : 391.0f;
     // PAL's vendor stretches its vertical coordinates by 1.2 and offsets them by four.
     const bool pal = mod.version() == "pal";
     const float scale_y = pal ? 1.2f : 1.0f;
@@ -108,15 +109,26 @@ void draw_hud(openrac::Mod& mod) {
     if (!glyphs) return;
     openrac::StackFrame frame(mod, 192);
     const auto line = [&](const char* text, float at_y, float scale) {
-        for (std::size_t i = 0; i <= std::char_traits<char>::length(text); ++i)
+        float width = 0.0f;
+        for (std::size_t i = 0; i <= std::char_traits<char>::length(text); ++i) {
+            const auto character = static_cast<std::uint8_t>(text[i]);
             mod.memory().write<char>(frame.address() + static_cast<openrac::gaddr>(i), text[i]);
-        s_print(x, at_y * scale_y + offset_y, 0x80F0F0F0u, frame.address(), -1,
+            if (character) width += mod.memory().read<std::int8_t>(glyphs + character * 4u + 3u) * scale;
+        }
+        // Keep long prices/statuses within the panel too, using the actual font metrics.
+        const float max_width = left ? 96.0f : 145.0f;
+        if (width > max_width) {
+            scale *= max_width / width;
+            width = max_width;
+        }
+        s_print(centre_x - width * 0.5f, at_y * scale_y + offset_y, 0x80F0F0F0u, frame.address(), -1,
                 scale, s_texture(2), glyphs);
     };
     s_scissor(0, 511, 0, pal ? 511 : 447);
-    line("Square / X", y, 0.60f);
-    line("Buy all ammo", y + 10.0f, 0.60f);
-    line(description, y + 20.0f, 0.48f);
+    // RAC2's Square glyph, not a literal controller name. OpenRAC replaces this font
+    // cell with the current input's prompt, just as it does for the vendor's Exit icon.
+    line("\x13 Buy all", y, 0.85f);
+    line(description, y + 16.0f, 0.60f);
 }
 
 void touch_buy_button(openrac::Mod& mod, bool visible) {
@@ -260,8 +272,8 @@ void load(openrac::Mod& mod) {
     });
 
     mod.on_frame([&mod, disc] { tick(mod, *disc); });
-    mod.info("RAC2 Buy All Ammo dev.3: Square / Xbox X, vendor HUD and Android touch button");
+    mod.info("RAC2 Buy All Ammo dev.4: Square / Xbox X, vendor HUD and Android touch button");
 }
 } // namespace
 
-OPENRAC_MOD_CPP("rac2-buy-all-ammo", "0.1.0-dev.3", load)
+OPENRAC_MOD_CPP("rac2-buy-all-ammo", "0.1.0-dev.4", load)

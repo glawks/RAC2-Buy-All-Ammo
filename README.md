@@ -11,7 +11,12 @@ At the **Megacorp weapon vendor**, press **Square** (PlayStation controller) or 
 
 ## Status
 
-**Development prototype** (`0.1.0-dev.3`). Purchase and HUD-quote unit tests pass, but the native game mod has **not yet been tested in RAC2 with this build**. Back up your save before testing. Important in-game checks: controller input, shop detection, displayed ammunition, purchase feedback, saving/loading, and multiplayer/other-mod compatibility.
+**Development prototype** (`0.1.0-dev.4`). Purchase and HUD-quote unit tests pass, but the native game mod has **not yet been tested in RAC2 with this build**. Back up your save before testing. Important in-game checks: controller input, shop detection, displayed ammunition, purchase feedback, saving/loading, and multiplayer/other-mod compatibility.
+
+## Changes in dev.4
+
+- Centred a larger, two-line prompt within the left vendor panel using native font metrics.
+- Replaced the literal controller names with the native Square glyph, using OpenRAC's active-input prompt handling like the vendor Exit control.
 
 ## Changes in dev.3
 
@@ -40,7 +45,7 @@ The same `.github/workflows/build.yml` runs on both branches and produces six pl
 
 **`dev`:** Each push builds/tests/packages the mod and adds downloadable **Actions → build → latest run → Artifacts**. `mod-release` contains the single combined all-platform ZIP, six individual ZIPs and `SHA256SUMS`. The six `mod-<platform>` artifacts are provided separately too. Nothing on `dev` publishes a GitHub Release.
 
-**`main`:** The workflow makes the same downloadable artifacts. After all six builds pass, a push with a *new stable* version in `openrac-mod.json` (for example `0.1.0`, rather than `0.1.0-dev.3`) automatically creates the corresponding GitHub Release (`v0.1.0`), containing the combined ZIP, six platform ZIPs and checksums. Re-pushing the same version preserves its existing release. Pull requests and manual workflow runs do not publish releases.
+**`main`:** The workflow makes the same downloadable artifacts. After all six builds pass, a push with a *new stable* version in `openrac-mod.json` (for example `0.1.0`, rather than `0.1.0-dev.4`) automatically creates the corresponding GitHub Release (`v0.1.0`), containing the combined ZIP, six platform ZIPs and checksums. Re-pushing the same version preserves its existing release. Pull requests and manual workflow runs do not publish releases.
 
 To test, download the `mod-release` Actions artifact ZIP, extract the **`rac2-buy-all-ammo-<version>.zip`** inside it, and install that combined ZIP in OpenRAC's launcher. **Do not install** the outer GitHub Actions artifact ZIP.
 

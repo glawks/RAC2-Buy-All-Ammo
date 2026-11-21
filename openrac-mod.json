@@ -2,7 +2,7 @@
   "format": 2,
   "id": "rac2-buy-all-ammo",
   "name": "RAC2 Buy All Ammo",
-  "version": "0.1.0-dev.3",
+  "version": "0.1.0-dev.4",
   "author": "glawks",
   "description": "Press Square (Xbox X) at the Going Commando weapon vendor to buy ammunition for every owned weapon at the usual prices, with an in-vendor HUD showing cost and purchase feedback.",
   "license": "MIT",
