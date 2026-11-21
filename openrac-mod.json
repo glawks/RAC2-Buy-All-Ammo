@@ -1,0 +1,19 @@
+{
+  "format": 2,
+  "id": "rac2-buy-all-ammo",
+  "name": "RAC2 Buy All Ammo",
+  "version": "0.1.0-dev.1",
+  "author": "glawks",
+  "description": "At a weapon vendor in Going Commando, press Square (Xbox X) to refill the ammo it sells for every owned weapon, paying the usual per-round price. Buys what you can afford when bolts are short.",
+  "license": "MIT",
+  "api": "1.20",
+  "games": {
+    "rac2": [
+      "ntsc",
+      "pal",
+      "ntsc2"
+    ]
+  },
+  "hooks": [],
+  "settings": []
+}

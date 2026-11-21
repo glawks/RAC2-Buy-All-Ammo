@@ -1,0 +1,204 @@
+name: build
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rac2-buy-all-ammo-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preflight:
+    name: Validate manifest and SDK
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Verify manifest matches native mod
+        run: python tests/release_preflight.py
+      - name: Download checksum-pinned SDK
+        run: python tools/fetch_sdk.py
+      - name: Validate OpenRAC manifest
+        run: |
+          SDK=$(python tools/fetch_sdk.py)
+          python "$SDK/tools/package_mod.py" --check openrac-mod.json
+
+  build:
+    needs: preflight
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {platform: windows-x86_64, runner: windows-2025}
+          - {platform: linux-x86_64, runner: ubuntu-22.04}
+          - {platform: linux-aarch64, runner: ubuntu-24.04-arm}
+          # Both architectures built on Intel; ARM is cross-compiled.
+          - {platform: macos-arm64, runner: macos-15-intel, arch: arm64, skip_tests: true}
+          - {platform: macos-x86_64, runner: macos-15-intel, arch: x86_64}
+          - platform: android-arm64
+            runner: ubuntu-24.04
+            configure: >-
+              -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_LATEST_HOME/build/cmake/android.toolchain.cmake
+              -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-28
+            skip_tests: true
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Install Ninja
+        run: python -m pip install ninja
+      - name: Configure MSVC environment
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          cmd /c "`"$vs\VC\Auxiliary\Build\vcvars64.bat`" && set" | ForEach-Object {
+            if ($_ -match '^([^=]+)=(.*)$') { "$($matches[1])=$($matches[2])" | Out-File -Append $env:GITHUB_ENV }
+          }
+      - name: Download pinned OpenRAC SDK
+        run: python tools/fetch_sdk.py
+      - name: Configure
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+          CROSS_CONFIG: ${{ matrix.configure }}
+          SKIP_TESTS: ${{ matrix.skip_tests }}
+        run: |
+          OPTIONS=()
+          if [ -n "$TARGET_ARCH" ]; then
+            OPTIONS+=("-DCMAKE_OSX_ARCHITECTURES=$TARGET_ARCH" '-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0')
+          fi
+          TESTING=ON
+          if [ "$SKIP_TESTS" = "true" ]; then TESTING=OFF; fi
+          # CROSS_CONFIG comes from our static matrix above; split its CMake options.
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING="$TESTING" \
+            "${OPTIONS[@]}" $CROSS_CONFIG
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Run unit tests
+        if: ${{ !matrix.skip_tests }}
+        run: ctest --test-dir build --output-on-failure
+      - name: Package and validate platform ZIP
+        env:
+          TARGET_PLATFORM: ${{ matrix.platform }}
+        run: |
+          SDK=$(python tools/fetch_sdk.py)
+          python "$SDK/tools/package_mod.py" build/package/rac2_buy_all_ammo -o dist
+          VERSION=$(python -c 'import json; print(json.load(open("openrac-mod.json"))["version"])')
+          ZIP="dist/rac2-buy-all-ammo-$VERSION-$TARGET_PLATFORM.zip"
+          test -s "$ZIP"
+          python - "$ZIP" "$TARGET_PLATFORM" <<'PY'
+          import sys, zipfile
+          archive, platform = sys.argv[1:]
+          with zipfile.ZipFile(archive) as z:
+              names = set(z.namelist())
+              assert 'openrac-mod.json' in names, names
+              assert any(n.startswith(f'lib/{platform}/') and 'rac2_buy_all_ammo' in n for n in names), names
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mod-${{ matrix.platform }}
+          path: dist/*.zip
+          if-no-files-found: error
+          retention-days: 30
+
+  merge:
+    name: Combine the six platforms
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: mod-*
+          path: dist
+          merge-multiple: true
+      - name: Merge, ensure all six exist and generate checksums
+        run: |
+          set -euo pipefail
+          SDK=$(python tools/fetch_sdk.py)
+          VERSION=$(python -c 'import json; print(json.load(open("openrac-mod.json"))["version"])')
+          for PLATFORM in windows-x86_64 linux-x86_64 linux-aarch64 macos-arm64 macos-x86_64 android-arm64; do
+            test -s "dist/rac2-buy-all-ammo-$VERSION-$PLATFORM.zip"
+          done
+          python "$SDK/tools/package_mod.py" --merge dist/rac2-buy-all-ammo-"$VERSION"-*.zip \
+            -o dist/rac2-buy-all-ammo-"$VERSION".zip
+          test -s "dist/rac2-buy-all-ammo-$VERSION.zip"
+          (cd dist && sha256sum *.zip > SHA256SUMS && sha256sum --check SHA256SUMS)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mod-release
+          path: |
+            dist/*.zip
+            dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Publish stable version from main
+    needs: merge
+    # Every dev push/test creates downloads under Actions; only a main push may publish.
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: rac2-buy-all-ammo-releases
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: mod-release
+          path: dist
+      - name: Publish only a new stable manifest version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          VERSION=$(python -c 'import json; print(json.load(open("openrac-mod.json"))["version"])')
+          # Development versions build and upload test artifacts, never public releases.
+          if [[ "$VERSION" == *-* ]]; then
+            echo "Development version $VERSION: no stable release will be created."
+            exit 0
+          fi
+          TAG="v$VERSION"
+          for PLATFORM in windows-x86_64 linux-x86_64 linux-aarch64 macos-arm64 macos-x86_64 android-arm64; do
+            test -s "dist/rac2-buy-all-ammo-$VERSION-$PLATFORM.zip"
+          done
+          test -s "dist/rac2-buy-all-ammo-$VERSION.zip"
+          test -s dist/SHA256SUMS
+          (cd dist && sha256sum --check SHA256SUMS)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists: keeping its tag and assets unchanged."
+            exit 0
+          fi
+          gh release create "$TAG" --target "$GITHUB_SHA" \
+            --title "RAC2 Buy All Ammo $TAG" --generate-notes --latest \
+            dist/rac2-buy-all-ammo-"$VERSION"-*.zip \
+            dist/rac2-buy-all-ammo-"$VERSION".zip dist/SHA256SUMS
