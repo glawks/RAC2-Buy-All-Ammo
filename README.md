@@ -11,13 +11,19 @@ At the **Megacorp weapon vendor**, press **Square** (PlayStation controller) or 
 
 ## Status
 
-**Development prototype** (`0.1.0-dev.2`). Purchase and HUD-quote unit tests pass, but the native game mod has **not yet been tested in RAC2**. Back up your save before testing. Important in-game checks: controller input, shop detection, displayed ammunition, purchase feedback, saving/loading, and multiplayer/other-mod compatibility.
+**Development prototype** (`0.1.0-dev.3`). Purchase and HUD-quote unit tests pass, but the native game mod has **not yet been tested in RAC2 with this build**. Back up your save before testing. Important in-game checks: controller input, shop detection, displayed ammunition, purchase feedback, saving/loading, and multiplayer/other-mod compatibility.
+
+## Changes in dev.3
+
+- Fixed the missing vendor prompt by using native vendor drawing instead of the camera-dependent overlay.
+- Default prompt placement is the empty left panel beside the ammo preview.
+- Successful buy-all transactions play the normal vendor purchase sound once.
 
 ## Vendor HUD
 
-The compact vendor prompt appears only in the weapon vendor's **main list**, not inside a purchase confirmation, cutscene, or other menu. It shows the action, exact affordable cost (or partial purchase when you cannot afford a full refill), and a brief purchase confirmation. Under **Mod settings**, `Show vendor ammo HUD` is on by default; `Vendor HUD position` can be changed between **Bottom right** (default) and **Top right** if the vendor UI overlaps it.
+The compact vendor prompt appears only in the weapon vendor's **main list**, not inside a purchase confirmation, cutscene, or other menu. It shows the action, exact affordable cost (or partial purchase when you cannot afford a full refill), and a brief purchase confirmation. Under **Mod settings**, `Show vendor ammo HUD` is on by default; `Vendor HUD position` defaults to the **Left vendor panel** beside the ammo preview, with **Bottom right** and **Top right** available if the vendor UI overlaps it.
 
-The normal vendor controls remain unchanged. On Android the mod also adds a contextual Square action button in the vendor, because OpenRAC's default touch vendor layout has no Square button. The action is available when at least one round can be purchased. The HUD overlay requires OpenRAC's overlay API (1.14+; the mod itself uses API 1.20). No gameplay testing has yet confirmed visual placement on all releases.
+The normal vendor controls remain unchanged. On Android the mod also adds a contextual Square action button in the vendor, because OpenRAC's default touch vendor layout has no Square button. The action is available when at least one round can be purchased. The prompt uses RAC2's own font drawing from the vendor draw hook, so it does not depend on a world camera being available. A successful buy-all plays the same vendor purchase sound as a normal ammo purchase, once per transaction. Visual placement and sound in this build still need in-game testing.
 
 ## Downloads: `dev` versus `main`
 
@@ -34,7 +40,7 @@ The same `.github/workflows/build.yml` runs on both branches and produces six pl
 
 **`dev`:** Each push builds/tests/packages the mod and adds downloadable **Actions → build → latest run → Artifacts**. `mod-release` contains the single combined all-platform ZIP, six individual ZIPs and `SHA256SUMS`. The six `mod-<platform>` artifacts are provided separately too. Nothing on `dev` publishes a GitHub Release.
 
-**`main`:** The workflow makes the same downloadable artifacts. After all six builds pass, a push with a *new stable* version in `openrac-mod.json` (for example `0.1.0`, rather than `0.1.0-dev.2`) automatically creates the corresponding GitHub Release (`v0.1.0`), containing the combined ZIP, six platform ZIPs and checksums. Re-pushing the same version preserves its existing release. Pull requests and manual workflow runs do not publish releases.
+**`main`:** The workflow makes the same downloadable artifacts. After all six builds pass, a push with a *new stable* version in `openrac-mod.json` (for example `0.1.0`, rather than `0.1.0-dev.3`) automatically creates the corresponding GitHub Release (`v0.1.0`), containing the combined ZIP, six platform ZIPs and checksums. Re-pushing the same version preserves its existing release. Pull requests and manual workflow runs do not publish releases.
 
 To test, download the `mod-release` Actions artifact ZIP, extract the **`rac2-buy-all-ammo-<version>.zip`** inside it, and install that combined ZIP in OpenRAC's launcher. **Do not install** the outer GitHub Actions artifact ZIP.
 
@@ -53,7 +59,7 @@ The SDK version and SHA256 are pinned in `sdk.lock`. To use a local SDK instead,
 
 ## Implementation notes
 
-The HUD uses `on_overlay` (the game HUD-text API is hidden underneath vendor menus). Only the game-thread tick reads vendor memory; a single atomic snapshot passes the presentation state to the rendering callback. The mod reads a PS2-style pad report (Square is the Xbox X mapping), checks the live vendor game state, iterates that vendor's ammo entries, reads each weapon's owned flag, active record, current ammo, capacity and per-round price, calculates a bounded purchase, and uses the OpenRAC SDK's bolts interface to deduct the cost. Source for the game's structures: OpenRAC's `ng-plus-plus/src/discs.h`, `difficulty-mod/src/rac2/discs.h`, and `rac2-decomp/src/game/002F5220-purchase.c`.
+The HUD uses `Vendor_DrawList` with the native small font and guest stack text storage. It draws before the original list, which restores its own clipping rectangle. The gameplay tick publishes the quote; the vendor draw hook renders it on the game thread. The purchase sound calls `PlayMobySound(7, 17, vendor.moby)`, matching the normal vendor ammo transaction. The mod reads a PS2-style pad report (Square is the Xbox X mapping), checks the live vendor game state, iterates that vendor's ammo entries, reads each weapon's owned flag, active record, current ammo, capacity and per-round price, calculates a bounded purchase, and uses the OpenRAC SDK's bolts interface to deduct the cost. Source for the game's structures: OpenRAC's `ng-plus-plus/src/discs.h`, `difficulty-mod/src/rac2/discs.h`, and `rac2-decomp/src/game/002F5220-purchase.c`.
 
 ## License
 

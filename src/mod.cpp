@@ -6,6 +6,7 @@
 // The gameplay tick owns all guest-memory reads and writes. The port's overlay can run on a
 // different (render) thread: its callback reads only ONE atomically published HUD snapshot.
 #include "openrac/mod.hpp"
+#include "openrac/games/rac2.hpp"
 #include "purchase_plan.hpp"
 
 #include <array>
@@ -52,7 +53,15 @@ constexpr unsigned kHudCostShift = 8;
 
 // Published atomically so the renderer never accesses the game memory or torn HUD data.
 std::atomic<std::uint64_t> s_hud{0};
-std::atomic<bool> s_top_right{false};
+std::string s_hud_position;
+using Print = void (*)(float, float, std::uint64_t, openrac::gaddr, int, float, std::uint64_t, openrac::gaddr);
+using Texture = std::uint64_t (*)(int);
+using Scissor = void (*)(int, int, int, int);
+using Sound = int (*)(int, int, openrac::gaddr);
+Print s_print = nullptr;
+Texture s_texture = nullptr;
+Scissor s_scissor = nullptr;
+Sound s_sound = nullptr;
 bool s_square_was_down = false;
 bool s_square_just_pressed = false;
 bool s_show_hud = true;
@@ -66,65 +75,48 @@ void publish(buy_all_ammo::Hint hint, int cost = 0) {
     s_hud.store(bits, std::memory_order_release);
 }
 
-// The overlay is drawn AFTER the game's own menus, unlike hud_text_set (which is hidden by them).
-// Screen dimensions are 512x448, and the only non-constant value read here is the atomic snapshot.
-void draw_hud(void*, const openrac_overlay* overlay) {
-    if (!overlay || overlay->size < sizeof(openrac_overlay) ||
-        !overlay->rect || !overlay->text) return;
-
-    const std::uint64_t bits = s_hud.load(std::memory_order_acquire);
+// Draw through the vendor's game-thread draw hook. The host overlay is camera-gated,
+// and a menu frame can have no world camera. All text uses guest stack storage.
+void draw_hud(openrac::Mod& mod) {
+    const auto bits = s_hud.load(std::memory_order_acquire);
     const auto hint = static_cast<buy_all_ammo::Hint>(bits & kHudKindMask);
-    if (hint == buy_all_ammo::Hint::Hidden) return;
-
+    if (!s_show_hud || hint == buy_all_ammo::Hint::Hidden) return;
     const auto cost = static_cast<std::uint32_t>(bits >> kHudCostShift);
-    const bool purchased = hint == buy_all_ammo::Hint::Purchased;
-    const bool unavailable = hint == buy_all_ammo::Hint::Full ||
-                             hint == buy_all_ammo::Hint::Insufficient;
-    const float x = 248.0f;
-    const float y = s_top_right.load(std::memory_order_relaxed) ? 30.0f : 351.0f;
-    constexpr float width = 251.0f;
-    constexpr float height = 66.0f;
-
-    const auto* ctx = overlay->context;
-    const std::uint32_t accent = purchased ? 0x72E0ACFFu
-                               : unavailable ? 0x91A1B6FFu : 0x6AC8EFFFu;
-    const std::uint32_t bright = purchased ? 0xD6FFEAFFu
-                               : unavailable ? 0xC2CBD8FFu : 0xF6FAFFFFu;
-    overlay->rect(const_cast<void*>(ctx), x, y, width, height, 0x0B1525E8u);
-    overlay->rect(const_cast<void*>(ctx), x, y, 3.0f, height, accent);
-    overlay->rect(const_cast<void*>(ctx), x, y, width, 1.0f, 0xFFFFFF30u);
-
-    // Draw a controller-agnostic Square outline next to "/ X": Square on PlayStation, X on Xbox.
-    const float bx = x + 14.0f;
-    const float by = y + 13.0f;
-    overlay->rect(const_cast<void*>(ctx), bx, by, 17.0f, 2.0f, accent);
-    overlay->rect(const_cast<void*>(ctx), bx, by + 15.0f, 17.0f, 2.0f, accent);
-    overlay->rect(const_cast<void*>(ctx), bx, by, 2.0f, 17.0f, accent);
-    overlay->rect(const_cast<void*>(ctx), bx + 15.0f, by, 2.0f, 17.0f, accent);
-    overlay->text(const_cast<void*>(ctx), x + 39.0f, y + 11.0f, 15.0f, bright, "/ X");
-    overlay->text(const_cast<void*>(ctx), x + 85.0f, y + 10.0f, 16.0f, bright, "BUY ALL AMMO");
-
     char description[96];
     switch (hint) {
         case buy_all_ammo::Hint::Buy:
-            std::snprintf(description, sizeof description, "REFILL: %u BOLTS", cost);
-            break;
+            std::snprintf(description, sizeof description, "%u bolts", cost); break;
         case buy_all_ammo::Hint::Partial:
-            std::snprintf(description, sizeof description, "SPEND: %u BOLTS (PARTIAL)", cost);
-            break;
+            std::snprintf(description, sizeof description, "%u bolts (partial)", cost); break;
         case buy_all_ammo::Hint::Full:
-            std::snprintf(description, sizeof description, "ALL AMMO FULL");
-            break;
+            std::snprintf(description, sizeof description, "Ammo full"); break;
         case buy_all_ammo::Hint::Insufficient:
-            std::snprintf(description, sizeof description, "NOT ENOUGH BOLTS");
-            break;
+            std::snprintf(description, sizeof description, "Not enough bolts"); break;
         case buy_all_ammo::Hint::Purchased:
-            std::snprintf(description, sizeof description, "PURCHASED FOR %u BOLTS", cost);
-            break;
-        default:
-            return;
+            std::snprintf(description, sizeof description, "Bought: %u bolts", cost); break;
+        default: return;
     }
-    overlay->text(const_cast<void*>(ctx), x + 15.0f, y + 42.0f, 13.0f, bright, description);
+    const bool left = s_hud_position == "vendor_left";
+    const float x = left ? 82.0f : 335.0f;
+    const float y = left ? 173.0f : s_hud_position == "top_right" ? 35.0f : 391.0f;
+    // PAL's vendor stretches its vertical coordinates by 1.2 and offsets them by four.
+    const bool pal = mod.version() == "pal";
+    const float scale_y = pal ? 1.2f : 1.0f;
+    const float offset_y = pal ? 4.0f : 0.0f;
+    const auto glyphs = mod.relocate(pal ? 0x00263C70u :
+                                    mod.version() == "ntsc2" ? 0x00263EB0u : 0x00263EF0u);
+    if (!glyphs) return;
+    openrac::StackFrame frame(mod, 192);
+    const auto line = [&](const char* text, float at_y, float scale) {
+        for (std::size_t i = 0; i <= std::char_traits<char>::length(text); ++i)
+            mod.memory().write<char>(frame.address() + static_cast<openrac::gaddr>(i), text[i]);
+        s_print(x, at_y * scale_y + offset_y, 0x80F0F0F0u, frame.address(), -1,
+                scale, s_texture(2), glyphs);
+    };
+    s_scissor(0, 511, 0, pal ? 511 : 447);
+    line("Square / X", y, 0.60f);
+    line("Buy all ammo", y + 10.0f, 0.60f);
+    line(description, y + 20.0f, 0.48f);
 }
 
 void touch_buy_button(openrac::Mod& mod, bool visible) {
@@ -190,6 +182,10 @@ void buy(openrac::Mod& mod,
         const auto addr = ammo_addr + static_cast<std::uint32_t>(purchase.item) * 4u;
         memory.write<std::int32_t>(addr, memory.read<std::int32_t>(addr) + purchase.amount);
     }
+    // The same sound, mode and vendor owner as VendorPurchaseDialogUpdate.
+    const auto vendor = mod.relocate(mod.version() == "ntsc" ? 0x0021F240u : 0x0021F1C0u);
+    const auto owner = vendor ? memory.read<openrac::gaddr>(vendor + 0x28u) : 0;
+    if (owner) s_sound(7, 17, owner);
     mod.info("Buy All Ammo: purchased " + std::to_string(plan.count) +
              " ammo types for " + std::to_string(plan.cost) + " bolts");
 }
@@ -241,8 +237,18 @@ void load(openrac::Mod& mod) {
     s_touch_buy_visible = false;
     publish(buy_all_ammo::Hint::Hidden);
     s_show_hud = mod.setting<bool>("show_hud");
-    s_top_right.store(mod.setting<std::string>("hud_position") == "top_right",
-                      std::memory_order_relaxed);
+    s_hud_position = mod.setting<std::string>("prompt_position");
+    const bool pal = mod.version() == "pal";
+    const bool us2 = mod.version() == "ntsc2";
+    s_print = mod.required_function<Print>(pal ? "func_0027FB48" : us2 ? "func_0027FCB0" : "func_0027F640");
+    s_texture = mod.required_function<Texture>(pal ? "func_0027CD60" : us2 ? "func_0027CED8" : "func_0027C878");
+    s_scissor = mod.required_function<Scissor>(pal ? "func_002FD678" : us2 ? "func_002FD4B0" : "func_002FC620");
+    s_sound = mod.required_function<Sound>("func_002E5CF8");
+    mod.hook<openrac::rac2::Vendor_DrawList>([&mod](auto original) {
+        // The list establishes its own scissor after our text, so its clipping is preserved.
+        draw_hud(mod);
+        original();
+    });
 
     mod.on_pad([](int port, std::uint8_t* report, int size) {
         if (port != 0 || report == nullptr || size < 2) return;
@@ -254,11 +260,8 @@ void load(openrac::Mod& mod) {
     });
 
     mod.on_frame([&mod, disc] { tick(mod, *disc); });
-    if (s_show_hud && !mod.on_overlay(draw_hud)) {
-        mod.info("Buy All Ammo: overlay unavailable; buying still works (no HUD).");
-    }
-    mod.info("RAC2 Buy All Ammo dev.2: Square / Xbox X, vendor HUD and Android touch button");
+    mod.info("RAC2 Buy All Ammo dev.3: Square / Xbox X, vendor HUD and Android touch button");
 }
 } // namespace
 
-OPENRAC_MOD_CPP("rac2-buy-all-ammo", "0.1.0-dev.2", load)
+OPENRAC_MOD_CPP("rac2-buy-all-ammo", "0.1.0-dev.3", load)

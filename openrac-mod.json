@@ -2,7 +2,7 @@
   "format": 2,
   "id": "rac2-buy-all-ammo",
   "name": "RAC2 Buy All Ammo",
-  "version": "0.1.0-dev.2",
+  "version": "0.1.0-dev.3",
   "author": "glawks",
   "description": "Press Square (Xbox X) at the Going Commando weapon vendor to buy ammunition for every owned weapon at the usual prices, with an in-vendor HUD showing cost and purchase feedback.",
   "license": "MIT",
@@ -14,7 +14,9 @@
       "ntsc2"
     ]
   },
-  "hooks": [],
+  "hooks": [
+    "Vendor_DrawList"
+  ],
   "settings": [
     {
       "key": "show_hud",
@@ -24,11 +26,15 @@
       "description": "Show the Square / Xbox X buy-all prompt, price and purchase feedback in the weapon vendor."
     },
     {
-      "key": "hud_position",
+      "key": "prompt_position",
       "name": "Vendor HUD position",
       "type": "choice",
-      "default": "bottom_right",
+      "default": "vendor_left",
       "choices": [
+        {
+          "value": "vendor_left",
+          "name": "Left vendor panel"
+        },
         {
           "value": "bottom_right",
           "name": "Bottom right"
