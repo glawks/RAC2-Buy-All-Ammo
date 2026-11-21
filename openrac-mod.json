@@ -1,19 +1,66 @@
 {
   "format": 2,
-  "id": "rac2-buy-all-ammo",
-  "name": "RAC2 Buy All Ammo",
-  "version": "0.1.0-dev.1",
+  "id": "vendor-buy-all",
+  "name": "Vendor Buy All",
+  "version": "0.2.0",
   "author": "glawks",
-  "description": "At a weapon vendor in Going Commando, press Square (Xbox X) to refill the ammo it sells for every owned weapon, paying the usual per-round price. Buys what you can afford when bolts are short.",
+  "description": "Buy all available ammunition for owned weapons with Square (Xbox X) at the Gadgetron or Megacorp vendor, at normal prices, with input-aware prompts and purchase feedback.",
   "license": "MIT",
   "api": "1.20",
   "games": {
+    "rac1": [
+      "pal",
+      "ntsc"
+    ],
     "rac2": [
       "ntsc",
       "pal",
       "ntsc2"
     ]
   },
-  "hooks": [],
-  "settings": []
+  "hooks": [
+    "rac2.vendor.draw_list"
+  ],
+  "settings": [
+    {
+      "key": "show_hud",
+      "name": "Show vendor ammo HUD",
+      "type": "bool",
+      "default": true,
+      "description": "Show the Square / Xbox X buy-all prompt, price and purchase feedback in the weapon vendor."
+    },
+    {
+      "key": "rac1_controller_label",
+      "name": "RAC1 controller button label",
+      "type": "choice",
+      "default": "xbox",
+      "choices": [
+        {"value": "xbox", "name": "Xbox X"},
+        {"value": "playstation", "name": "PlayStation Square"}
+      ],
+      "description": "RAC1 shows F for keyboard input automatically. Choose Xbox X or PlayStation Square for controller input; SDK 1.20 does not identify the controller model."
+    },
+    {
+      "key": "prompt_position",
+      "name": "RAC2 vendor HUD position",
+      "type": "choice",
+      "default": "vendor_left",
+      "choices": [
+        {
+          "value": "vendor_left",
+          "name": "Below vendor controls"
+        },
+        {
+          "value": "bottom_right",
+          "name": "Bottom right"
+        },
+        {
+          "value": "top_right",
+          "name": "Top right"
+        }
+      ],
+      "description": "RAC2 prompt placement. RAC1 uses a compact input-aware text prompt with a dark outline between the vendor controls."
+    }
+  ],
+  "touch": "touch.json"
 }
