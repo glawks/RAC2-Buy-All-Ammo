@@ -13,6 +13,6 @@ assert manifest["games"] == {"rac1": ["pal", "ntsc"], "rac2": ["ntsc", "pal", "n
 assert re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?", manifest["version"])
 assert f'OPENRAC_MOD_CPP("{manifest["id"]}", "{manifest["version"]}", load)' in source
 assert manifest["api"] == "1.20"
-assert manifest["hooks"] == ["rac1.text.msg_string", "rac2.vendor.draw_list"]
+assert manifest["hooks"] == ["rac1.vendor.draw_details", "rac2.vendor.draw_list"]
 assert (root / "src/purchase_plan.hpp").is_file()
 print(f'Preflight passed: {manifest["id"]} {manifest["version"]}')
