@@ -15,6 +15,8 @@
 #include <cstdio>
 #include <string>
 
+void load_rac1(openrac::Mod& mod);
+
 namespace {
 
 struct Disc {
@@ -249,7 +251,7 @@ void tick(openrac::Mod& mod, const Disc& disc) {
     }
 }
 
-void load(openrac::Mod& mod) {
+void load_rac2(openrac::Mod& mod) {
     if (mod.game() != "rac2") throw openrac::Error("R&C2 only");
     const Disc* disc = nullptr;
     for (const Disc& d : kDiscs) {
@@ -288,8 +290,15 @@ void load(openrac::Mod& mod) {
     });
 
     mod.on_frame([&mod, disc] { tick(mod, *disc); });
-    mod.info("RAC2 Buy All Ammo dev.5: Square / Xbox X, vendor HUD and Android touch button");
+    mod.info("Vendor Buy All 0.2.0-dev.1: Square / Xbox X, vendor HUD and Android touch button");
 }
 } // namespace
 
-OPENRAC_MOD_CPP("rac2-buy-all-ammo", "0.1.0-dev.5", load)
+namespace {
+void load(openrac::Mod& mod) {
+    if (mod.game() == "rac1") load_rac1(mod);
+    else if (mod.game() == "rac2") load_rac2(mod);
+    else throw openrac::Error("Vendor Buy All supports RAC1 and RAC2");
+}
+}
+OPENRAC_MOD_CPP("vendor-buy-all", "0.2.0-dev.1", load)

@@ -1,13 +1,17 @@
 {
   "format": 2,
-  "id": "rac2-buy-all-ammo",
-  "name": "RAC2 Buy All Ammo",
-  "version": "0.1.0-dev.5",
+  "id": "vendor-buy-all",
+  "name": "Vendor Buy All",
+  "version": "0.2.0-dev.1",
   "author": "glawks",
-  "description": "Press Square (Xbox X) at the Going Commando weapon vendor to buy ammunition for every owned weapon at the usual prices, with an in-vendor HUD showing cost and purchase feedback.",
+  "description": "Buy all available ammunition for owned weapons with Square (Xbox X) at the Gadgetron or Megacorp vendor, at normal prices, with native button prompts and purchase feedback.",
   "license": "MIT",
   "api": "1.20",
   "games": {
+    "rac1": [
+      "pal",
+      "ntsc"
+    ],
     "rac2": [
       "ntsc",
       "pal",
@@ -15,7 +19,8 @@
     ]
   },
   "hooks": [
-    "Vendor_DrawList"
+    "rac1.vendor.icon_strip.draw",
+    "rac2.vendor.draw_list"
   ],
   "settings": [
     {
@@ -27,7 +32,7 @@
     },
     {
       "key": "prompt_position",
-      "name": "Vendor HUD position",
+      "name": "RAC2 vendor HUD position",
       "type": "choice",
       "default": "vendor_left",
       "choices": [
@@ -44,7 +49,7 @@
           "name": "Top right"
         }
       ],
-      "description": "Where to draw the buy-all-ammo prompt inside the weapon vendor."
+      "description": "RAC2 prompt placement. RAC1 displays its prompt below the icons on the vendor monitor."
     }
   ],
   "touch": "touch.json"

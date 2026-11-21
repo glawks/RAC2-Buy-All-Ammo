@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: rac2-buy-all-ammo-${{ github.workflow }}-${{ github.ref }}
+  group: vendor-buy-all-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -100,9 +100,9 @@ jobs:
           TARGET_PLATFORM: ${{ matrix.platform }}
         run: |
           SDK=$(python tools/fetch_sdk.py)
-          python "$SDK/tools/package_mod.py" build/package/rac2_buy_all_ammo -o dist
+          python "$SDK/tools/package_mod.py" build/package/vendor_buy_all -o dist
           VERSION=$(python -c 'import json; print(json.load(open("openrac-mod.json"))["version"])')
-          ZIP="dist/rac2-buy-all-ammo-$VERSION-$TARGET_PLATFORM.zip"
+          ZIP="dist/vendor-buy-all-$VERSION-$TARGET_PLATFORM.zip"
           test -s "$ZIP"
           python - "$ZIP" "$TARGET_PLATFORM" <<'PY'
           import sys, zipfile
@@ -110,7 +110,7 @@ jobs:
           with zipfile.ZipFile(archive) as z:
               names = set(z.namelist())
               assert 'openrac-mod.json' in names, names
-              assert any(n.startswith(f'lib/{platform}/') and 'rac2_buy_all_ammo' in n for n in names), names
+              assert any(n.startswith(f'lib/{platform}/') and 'vendor_buy_all' in n for n in names), names
           PY
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -141,11 +141,11 @@ jobs:
           SDK=$(python tools/fetch_sdk.py)
           VERSION=$(python -c 'import json; print(json.load(open("openrac-mod.json"))["version"])')
           for PLATFORM in windows-x86_64 linux-x86_64 linux-aarch64 macos-arm64 macos-x86_64 android-arm64; do
-            test -s "dist/rac2-buy-all-ammo-$VERSION-$PLATFORM.zip"
+            test -s "dist/vendor-buy-all-$VERSION-$PLATFORM.zip"
           done
-          python "$SDK/tools/package_mod.py" --merge dist/rac2-buy-all-ammo-"$VERSION"-*.zip \
-            -o dist/rac2-buy-all-ammo-"$VERSION".zip
-          test -s "dist/rac2-buy-all-ammo-$VERSION.zip"
+          python "$SDK/tools/package_mod.py" --merge dist/vendor-buy-all-"$VERSION"-*.zip \
+            -o dist/vendor-buy-all-"$VERSION".zip
+          test -s "dist/vendor-buy-all-$VERSION.zip"
           (cd dist && sha256sum *.zip > SHA256SUMS && sha256sum --check SHA256SUMS)
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -163,7 +163,7 @@ jobs:
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-24.04
     concurrency:
-      group: rac2-buy-all-ammo-releases
+      group: vendor-buy-all-releases
       cancel-in-progress: false
     permissions:
       contents: write
@@ -189,9 +189,9 @@ jobs:
           fi
           TAG="v$VERSION"
           for PLATFORM in windows-x86_64 linux-x86_64 linux-aarch64 macos-arm64 macos-x86_64 android-arm64; do
-            test -s "dist/rac2-buy-all-ammo-$VERSION-$PLATFORM.zip"
+            test -s "dist/vendor-buy-all-$VERSION-$PLATFORM.zip"
           done
-          test -s "dist/rac2-buy-all-ammo-$VERSION.zip"
+          test -s "dist/vendor-buy-all-$VERSION.zip"
           test -s dist/SHA256SUMS
           (cd dist && sha256sum --check SHA256SUMS)
           if gh release view "$TAG" >/dev/null 2>&1; then
@@ -199,6 +199,6 @@ jobs:
             exit 0
           fi
           gh release create "$TAG" --target "$GITHUB_SHA" \
-            --title "RAC2 Buy All Ammo $TAG" --generate-notes --latest \
-            dist/rac2-buy-all-ammo-"$VERSION"-*.zip \
-            dist/rac2-buy-all-ammo-"$VERSION".zip dist/SHA256SUMS
+            --title "Vendor Buy All $TAG" --generate-notes --latest \
+            dist/vendor-buy-all-"$VERSION"-*.zip \
+            dist/vendor-buy-all-"$VERSION".zip dist/SHA256SUMS

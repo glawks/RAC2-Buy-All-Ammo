@@ -1,44 +1,37 @@
-# RAC2 Buy All Ammo
+# Vendor Buy All
 
-An OpenRAC native quality-of-life mod for **Ratchet & Clank 2: Going Commando**.
+An OpenRAC mod for **Ratchet & Clank** and **Ratchet & Clank 2: Going Commando**.
 
-At the **Megacorp weapon vendor**, press **Square** (PlayStation controller) or **X** (Xbox controller) to refill the ammunition sold by that vendor for your owned weapons. Bolts are deducted at the game's normal per-round prices. When you cannot afford everything, the mod buys what you can afford in the vendor's list order.
+Press **Square** (PlayStation) or **X** (Xbox) in the vendor's main list to buy ammunition for all owned weapons whose ammo that vendor sells. Prices come from the game's live item records. If you cannot afford a full refill, the mod buys what you can afford in vendor-list order.
 
-- Skips unowned weapons, full ammo, items not sold by that vendor, and upgrades.
-- Runs only in the vendor list, not the buy/confirm dialog; standard vendor buttons remain unchanged.
-- Supports RAC2 NTSC-U v1.01 (`ntsc`), PAL (`pal`), and NTSC-U v2.00 (`ntsc2`).
-- The vendor now shows a HUD control hint (`Square / Xbox X`) and a live refill price, or a partial-purchase / full-ammo / insufficient-bolts status. After purchase, the HUD confirms the bolts spent for about two seconds. There is also an Android touch action (Square) on the vendor screen. Purchases continue to be logged.
+- Skips unowned weapons, weapon purchases, upgrades, full ammo and ammo with no selling price.
+- Leaves normal single-item purchases available; buy-all is disabled inside their confirmation dialog.
+- Shows the native button glyph, affordable price, partial-purchase status, full-ammo status and a brief purchase confirmation.
+- Plays the game's normal purchase sound after a transaction, or its rejection sound if nothing can be bought.
+- Adds a contextual Square touch action on Android.
 
-## Status
+## Development build
 
-**Development prototype** (`0.1.0-dev.5`). Purchase and HUD-quote unit tests pass, but the native game mod has **not yet been tested in RAC2 with this build**. Back up your save before testing. Important in-game checks: controller input, shop detection, displayed ammunition, purchase feedback, saving/loading, and multiplayer/other-mod compatibility.
+**0.2.0-dev.1** introduces RAC1 support and renames the mod ID from `rac2-buy-all-ammo` to **`vendor-buy-all`**. RAC2's purchase behaviour, native prompt and sounds were tested in-game during development. **RAC1 is a new port and still needs in-game testing**, including prompt visibility, vendor transitions, PDA prices, sounds and save/load behaviour.
 
-## Changes in dev.5
+Remove the old **RAC2 Buy All Ammo** installation before enabling **Vendor Buy All**. The new ID is a separate mod to the launcher; leaving both active can cause duplicate input handlers and prompts. Settings under the old ID are not migrated.
 
-- Moved the prompt into its own bordered box below the normal Buy control, avoiding overlap when manual ammo purchases are available.
-- Kept the price, full-ammo and purchase-confirmation text within that box.
-- Pressing buy-all when no ammo can be purchased plays the vendor's native rejection sound once, including on Android.
+| Game | Supported discs |
+|---|---|
+| Ratchet & Clank | PAL (`pal`), NTSC-U (`ntsc`) |
+| Going Commando | NTSC-U v1.01 (`ntsc`), PAL (`pal`), NTSC-U v2.00 (`ntsc2`) |
 
-## Changes in dev.4
+## Native prompts
 
-- Centred a larger, two-line prompt within the left vendor panel using native font metrics.
-- Replaced the literal controller names with the native Square glyph, using OpenRAC's active-input prompt handling like the vendor Exit control.
+**RAC1:** The prompt is drawn in the lower half of the vendor's item-strip monitor capture, below the item icons. It uses RAC1's own small font and controller glyph. The Gadgetron PDA's alternate per-round price is used when its vendor price selector is active.
 
-## Changes in dev.3
+**RAC2:** A separate bordered box below the regular Buy control contains the buy-all prompt and status. Under Mod settings, **RAC2 vendor HUD position** can move it to the top or bottom right. **Show vendor ammo HUD** applies to both games.
 
-- Fixed the missing vendor prompt by using native vendor drawing instead of the camera-dependent overlay.
-- Default prompt placement is the empty left panel beside the ammo preview.
-- Successful buy-all transactions play the normal vendor purchase sound once.
+The native Square glyph follows the shared font artwork, including the separate [Xbox Icons mod](https://github.com/OpenRAC/openrac-mods/tree/master/xbox-icons). Keyboard prompt changes use OpenRAC's shared font handling; no Xbox artwork is bundled or painted by this mod. RAC1's new capture placement and input prompt transitions require in-game verification.
 
-## Vendor HUD
+## Test downloads and releases
 
-The compact vendor prompt appears only in the weapon vendor's **main list**, not inside a purchase confirmation, cutscene, or other menu. It shows the action, exact affordable cost (or partial purchase when you cannot afford a full refill), and a brief purchase confirmation. Under **Mod settings**, `Show vendor ammo HUD` is on by default; `Vendor HUD position` defaults to the **Below vendor controls**, in a separate box below the normal Buy prompt, with **Bottom right** and **Top right** available if the vendor UI overlaps it.
-
-The normal vendor controls remain unchanged. On Android the mod also adds a contextual Square action button in the vendor, because OpenRAC's default touch vendor layout has no Square button. The action stays available in the main vendor list so full-ammo and insufficient-bolts attempts also play the rejection sound. The prompt uses RAC2's own font drawing from the vendor draw hook, so it does not depend on a world camera being available. A successful buy-all plays the same vendor purchase sound as a normal ammo purchase, once per transaction. Visual placement and sound in this build still need in-game testing.
-
-## Downloads: `dev` versus `main`
-
-The same `.github/workflows/build.yml` runs on both branches and produces six platforms:
+Each push to **dev** builds six platforms and uploads downloadable Actions artifacts. Development builds do not publish GitHub Releases.
 
 | Platform | Archive suffix |
 |---|---|
@@ -49,11 +42,9 @@ The same `.github/workflows/build.yml` runs on both branches and produces six pl
 | macOS Intel | `macos-x86_64` |
 | Android ARM64 | `android-arm64` |
 
-**`dev`:** Each push builds/tests/packages the mod and adds downloadable **Actions → build → latest run → Artifacts**. `mod-release` contains the single combined all-platform ZIP, six individual ZIPs and `SHA256SUMS`. The six `mod-<platform>` artifacts are provided separately too. Nothing on `dev` publishes a GitHub Release.
+Open **Actions → build → latest successful dev run → Artifacts → mod-release**. Extract the **`vendor-buy-all-0.2.0-dev.1.zip`** inside that artifact, then install that inner combined ZIP in OpenRAC's launcher. The outer Actions ZIP is not an installable mod. Separate platform ZIPs and `SHA256SUMS` are also included.
 
-**`main`:** The workflow makes the same downloadable artifacts. After all six builds pass, a push with a *new stable* version in `openrac-mod.json` (for example `0.1.0`, rather than `0.1.0-dev.5`) automatically creates the corresponding GitHub Release (`v0.1.0`), containing the combined ZIP, six platform ZIPs and checksums. Re-pushing the same version preserves its existing release. Pull requests and manual workflow runs do not publish releases.
-
-To test, download the `mod-release` Actions artifact ZIP, extract the **`rac2-buy-all-ammo-<version>.zip`** inside it, and install that combined ZIP in OpenRAC's launcher. **Do not install** the outer GitHub Actions artifact ZIP.
+The workflow uses the current repository name automatically, so renaming the GitHub repository to `vendor-buy-all` requires no additional workflow change. On **main**, a push with a new stable manifest version publishes a release after all six platform builds and packaging checks succeed. A development version, pull request or manual workflow run does not publish a release. Existing releases are preserved.
 
 ## Building locally
 
@@ -66,11 +57,17 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-The SDK version and SHA256 are pinned in `sdk.lock`. To use a local SDK instead, set `-DOPENRAC_SDK=/path/to/sdk` when configuring CMake. The SDK's `tools/package_mod.py` produces the platform ZIP from `build/package/rac2_buy_all_ammo`.
+SDK 1.20 is pinned by version and SHA256 in `sdk.lock`. To use a local SDK, pass `-DOPENRAC_SDK=/path/to/sdk`. Package `build/package/vendor_buy_all` with the SDK's `tools/package_mod.py`.
 
-## Implementation notes
+Tests cover bounded and partial purchases, invalid entries, full-ammo and insufficient-bolts quotes, duplicate entries, and RAC1 vendor-state guards, stock ownership, manual-dialog exclusion and PDA alternate prices. Runtime tests also exercise each RAC1 disc adapter through SDK callbacks with simulated game memory, checking payment, ammo changes, one purchase per press, native sound IDs, dialog exclusion and the native prompt draw. They cannot establish in-game visual placement or audio playback.
 
-The HUD uses `Vendor_DrawList` with the native small font and guest stack text storage. It draws before the original list, which restores its own clipping rectangle. The gameplay tick publishes the quote; the vendor draw hook renders it on the game thread. The purchase sound calls `PlayMobySound(7, 17, vendor.moby)`, matching the normal vendor ammo transaction. The mod reads a PS2-style pad report (Square is the Xbox X mapping), checks the live vendor game state, iterates that vendor's ammo entries, reads each weapon's owned flag, active record, current ammo, capacity and per-round price, calculates a bounded purchase, and uses the OpenRAC SDK's bolts interface to deduct the cost. Source for the game's structures: OpenRAC's `ng-plus-plus/src/discs.h`, `difficulty-mod/src/rac2/discs.h`, and `rac2-decomp/src/game/002F5220-purchase.c`.
+## Implementation
+
+Each game has its own vendor adapter and native drawing path. Both share the purchase planner in `src/purchase_plan.hpp`. The gameplay tick reads the active vendor's ammo rows, computes a quote from the current balance, deducts its bounded total through the SDK's bolts interface and adds the purchased rounds on the game thread.
+
+RAC1 data and sound behaviour are based on `OpenRAC/rac1-decomp`'s `vendor_menu.c`, `game/ui/vendor.c`, and the per-disc addresses documented by OpenRAC's ammo-max and cheats mods. The native icon-strip draw hook appends the prompt after the normal icons without replacing their draw or purchase handlers.
+
+RAC2 uses its existing vendor list adapter and `Vendor_DrawList` hook. Sound IDs 7 (purchase) and 2 (rejection) use each game's own vendor owner and sound mode. The manifest names hooks by stable, game-qualified IDs so the launcher can load the correct adapter.
 
 ## License
 

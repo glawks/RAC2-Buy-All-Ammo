@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(rac2_buy_all_ammo LANGUAGES C CXX)
+project(vendor_buy_all LANGUAGES C CXX)
 
 # Download the pinned SDK with tools/fetch_sdk.py, or pass -DOPENRAC_SDK=/path/to/sdk.
 if(NOT OpenRACMod_DIR)
@@ -13,13 +13,13 @@ if(NOT OpenRACMod_DIR)
 endif()
 find_package(OpenRACMod 1.20 REQUIRED)
 
-openrac_add_mod(rac2_buy_all_ammo MANIFEST openrac-mod.json SOURCES src/mod.cpp)
+openrac_add_mod(vendor_buy_all MANIFEST openrac-mod.json SOURCES src/mod.cpp src/rac1.cpp)
 # The OpenRAC SDK packages README/LICENSE automatically but not a manifest's touch file.
 # Include this layout in every native platform ZIP, so Android's vendor Square action loads.
-get_target_property(RAC2_PACKAGE_DIR rac2_buy_all_ammo OPENRAC_MOD_PACKAGE_DIR)
+get_target_property(VENDOR_PACKAGE_DIR vendor_buy_all OPENRAC_MOD_PACKAGE_DIR)
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/touch.json"
-               "${RAC2_PACKAGE_DIR}/touch.json" COPYONLY)
-target_include_directories(rac2_buy_all_ammo PRIVATE src)
+               "${VENDOR_PACKAGE_DIR}/touch.json" COPYONLY)
+target_include_directories(vendor_buy_all PRIVATE src)
 
 include(CTest)
 if(BUILD_TESTING)
@@ -27,4 +27,14 @@ if(BUILD_TESTING)
   target_compile_features(purchase_plan_test PRIVATE cxx_std_17)
   target_include_directories(purchase_plan_test PRIVATE src)
   add_test(NAME purchase_plan COMMAND purchase_plan_test)
+  add_executable(rac1_vendor_test tests/rac1_vendor_test.cpp)
+  target_compile_features(rac1_vendor_test PRIVATE cxx_std_17)
+  target_include_directories(rac1_vendor_test PRIVATE src)
+  add_test(NAME rac1_vendor COMMAND rac1_vendor_test)
+  add_executable(rac1_runtime_test tests/rac1_runtime_test.cpp src/rac1.cpp)
+  target_compile_features(rac1_runtime_test PRIVATE cxx_std_17)
+  target_include_directories(rac1_runtime_test PRIVATE src)
+  target_link_libraries(rac1_runtime_test PRIVATE OpenRAC::mod)
+  add_test(NAME rac1_runtime_pal COMMAND rac1_runtime_test pal)
+  add_test(NAME rac1_runtime_ntsc COMMAND rac1_runtime_test ntsc)
 endif()
