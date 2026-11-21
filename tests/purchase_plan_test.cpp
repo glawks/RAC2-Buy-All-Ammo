@@ -53,5 +53,29 @@ int main() {
     p = make_plan(entries, 8, 300);
     check(p.count == 2 && p.cost == 220, "invalid entries skipped");
 
-    std::cout << "purchase_plan tests passed\n";
+    auto q = make_quote(entries, 8, 300);
+    check(q.full_cost == 220 && q.refillable_types == 2 &&
+          hint_for(q) == Hint::Buy, "HUD full-refill quote");
+    q = make_quote(entries, 8, 125);
+    check(q.affordable.cost == 120 && q.full_cost == 220 &&
+          hint_for(q) == Hint::Partial, "HUD partial-refill quote");
+    q = make_quote(entries, 8, 1);
+    check(q.affordable.count == 0 && hint_for(q) == Hint::Insufficient,
+          "HUD insufficient-bolts status");
+    q = make_quote(entries, 8, 0);
+    check(hint_for(q) == Hint::Insufficient, "HUD no-bolts status");
+    entries[0].current = 100;
+    entries[1].current = 10;
+    q = make_quote(entries, 8, 300);
+    check(q.refillable_types == 0 && hint_for(q) == Hint::Full,
+          "HUD full-ammo status");
+
+    // A heavily scaled ammo capacity and price cannot overflow the quote's full cost.
+    entries[0] = {30, 0, 65535, 65535};
+    entries[1] = {37, 0, 65535, 65535};
+    q = make_quote(entries, 2, 100);
+    check(q.full_cost == 8589672450ULL && q.affordable.cost == 0,
+          "HUD full cost is 64-bit, purchase remains bounded");
+
+    std::cout << "purchase_plan and HUD quote tests passed\n";
 }

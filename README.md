@@ -7,11 +7,17 @@ At the **Megacorp weapon vendor**, press **Square** (PlayStation controller) or 
 - Skips unowned weapons, full ammo, items not sold by that vendor, and upgrades.
 - Runs only in the vendor list, not the buy/confirm dialog; standard vendor buttons remain unchanged.
 - Supports RAC2 NTSC-U v1.01 (`ntsc`), PAL (`pal`), and NTSC-U v2.00 (`ntsc2`).
-- No in-game button hint or purchase message yet; the purchase is logged.
+- The vendor now shows a HUD control hint (`Square / Xbox X`) and a live refill price, or a partial-purchase / full-ammo / insufficient-bolts status. After purchase, the HUD confirms the bolts spent for about two seconds. There is also an Android touch action (Square) on the vendor screen. Purchases continue to be logged.
 
 ## Status
 
-**Development prototype** (`0.1.0-dev.1`). Calculation unit tests pass, but the native game mod has **not yet been tested in RAC2**. Back up your save before testing. Important in-game checks: controller input, shop detection, displayed ammunition, purchase feedback, saving/loading, and multiplayer/other-mod compatibility.
+**Development prototype** (`0.1.0-dev.2`). Purchase and HUD-quote unit tests pass, but the native game mod has **not yet been tested in RAC2**. Back up your save before testing. Important in-game checks: controller input, shop detection, displayed ammunition, purchase feedback, saving/loading, and multiplayer/other-mod compatibility.
+
+## Vendor HUD
+
+The compact vendor prompt appears only in the weapon vendor's **main list**, not inside a purchase confirmation, cutscene, or other menu. It shows the action, exact affordable cost (or partial purchase when you cannot afford a full refill), and a brief purchase confirmation. Under **Mod settings**, `Show vendor ammo HUD` is on by default; `Vendor HUD position` can be changed between **Bottom right** (default) and **Top right** if the vendor UI overlaps it.
+
+The normal vendor controls remain unchanged. On Android the mod also adds a contextual Square action button in the vendor, because OpenRAC's default touch vendor layout has no Square button. The action is available when at least one round can be purchased. The HUD overlay requires OpenRAC's overlay API (1.14+; the mod itself uses API 1.20). No gameplay testing has yet confirmed visual placement on all releases.
 
 ## Downloads: `dev` versus `main`
 
@@ -28,7 +34,7 @@ The same `.github/workflows/build.yml` runs on both branches and produces six pl
 
 **`dev`:** Each push builds/tests/packages the mod and adds downloadable **Actions → build → latest run → Artifacts**. `mod-release` contains the single combined all-platform ZIP, six individual ZIPs and `SHA256SUMS`. The six `mod-<platform>` artifacts are provided separately too. Nothing on `dev` publishes a GitHub Release.
 
-**`main`:** The workflow makes the same downloadable artifacts. After all six builds pass, a push with a *new stable* version in `openrac-mod.json` (for example `0.1.0`, rather than `0.1.0-dev.1`) automatically creates the corresponding GitHub Release (`v0.1.0`), containing the combined ZIP, six platform ZIPs and checksums. Re-pushing the same version preserves its existing release. Pull requests and manual workflow runs do not publish releases.
+**`main`:** The workflow makes the same downloadable artifacts. After all six builds pass, a push with a *new stable* version in `openrac-mod.json` (for example `0.1.0`, rather than `0.1.0-dev.2`) automatically creates the corresponding GitHub Release (`v0.1.0`), containing the combined ZIP, six platform ZIPs and checksums. Re-pushing the same version preserves its existing release. Pull requests and manual workflow runs do not publish releases.
 
 To test, download the `mod-release` Actions artifact ZIP, extract the **`rac2-buy-all-ammo-<version>.zip`** inside it, and install that combined ZIP in OpenRAC's launcher. **Do not install** the outer GitHub Actions artifact ZIP.
 
@@ -47,7 +53,7 @@ The SDK version and SHA256 are pinned in `sdk.lock`. To use a local SDK instead,
 
 ## Implementation notes
 
-The mod reads a PS2-style pad report (Square is the Xbox X mapping), checks the live vendor game state, iterates that vendor's ammo entries, reads each weapon's owned flag, active record, current ammo, capacity and per-round price, calculates a bounded purchase, and uses the OpenRAC SDK's bolts interface to deduct the cost. Source for the game's structures: OpenRAC's `ng-plus-plus/src/discs.h`, `difficulty-mod/src/rac2/discs.h`, and `rac2-decomp/src/game/002F5220-purchase.c`.
+The HUD uses `on_overlay` (the game HUD-text API is hidden underneath vendor menus). Only the game-thread tick reads vendor memory; a single atomic snapshot passes the presentation state to the rendering callback. The mod reads a PS2-style pad report (Square is the Xbox X mapping), checks the live vendor game state, iterates that vendor's ammo entries, reads each weapon's owned flag, active record, current ammo, capacity and per-round price, calculates a bounded purchase, and uses the OpenRAC SDK's bolts interface to deduct the cost. Source for the game's structures: OpenRAC's `ng-plus-plus/src/discs.h`, `difficulty-mod/src/rac2/discs.h`, and `rac2-decomp/src/game/002F5220-purchase.c`.
 
 ## License
 
