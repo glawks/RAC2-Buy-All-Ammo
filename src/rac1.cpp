@@ -8,7 +8,7 @@
 namespace {
 using namespace buy_all_ammo;
 using Disc = vendor_buy_all::rac1::Disc;
-using Print = int (*)(int, int, std::uint64_t, openrac::gaddr, int);
+using Print = void (*)(int, int, std::uint64_t, openrac::gaddr, int);
 using Sound = int (*)(int, int, openrac::gaddr);
 Print s_print = nullptr;
 Sound s_sound = nullptr;
@@ -87,34 +87,35 @@ void tick(openrac::Mod& mod, const Disc& disc) {
     }
 }
 
-// The Buy monitor samples only its projected bounds from the 512x128 capture.
-// Keep all three native-font lines within its visible 80x48 region. The carousel
-// monitor crops off its lower half, so adding text below its icons cannot show it.
-void draw(openrac::Mod& mod, const Disc& disc, openrac::gaddr normal_buy) {
+// RAC1 renders vendor monitors into separate captured textures. The SDK exposes
+// the item-details pass but not the Buy-label pass. Drawing after the native
+// details places the prompt in a visible capture without altering Buy or Exit.
+void draw(openrac::Mod& mod, const Disc& disc) {
     if (!s_show || s_hint == Hint::Hidden) return;
     std::array<Candidate, kItems> current{};
     openrac::gaddr ammo = 0;
     if (!collect(mod, disc, current, ammo)) return;
-    char status[96];
+    char status[64];
     switch (s_hint) {
         case Hint::Buy: std::snprintf(status, sizeof status, "%d bolts", s_cost); break;
-        case Hint::Partial: std::snprintf(status, sizeof status, "%d bolts (partial)", s_cost); break;
+        case Hint::Partial: std::snprintf(status, sizeof status, "Partial %d", s_cost); break;
         case Hint::Full: std::snprintf(status, sizeof status, "Ammo full"); break;
         case Hint::Insufficient: std::snprintf(status, sizeof status, "No bolts"); break;
         case Hint::Purchased: std::snprintf(status, sizeof status, "Bought"); break;
         default: return;
     }
-    openrac::StackFrame frame(mod, 192);
-    const auto line = [&](const char* text, int y) {
-        for (std::size_t i = 0; i <= std::char_traits<char>::length(text); ++i)
-            mod.memory().write<char>(frame.address() + static_cast<openrac::gaddr>(i), text[i]);
-        s_print(40, y, 0x80F0F0F0u, frame.address(), -1);
+    openrac::StackFrame frame(mod, 96);
+    const auto line = [&](const char* label, int y) {
+        for (std::size_t i = 0; i <= std::char_traits<char>::length(label); ++i)
+            mod.memory().write<char>(frame.address() + static_cast<openrac::gaddr>(i), label[i]);
+        // Native small font; lower-left of the details monitor, away from
+        // the item's right-aligned price and the selected weapon's name.
+        s_print(6, y, 0x80F0F0F0u, frame.address(), -1);
     };
-    // Preserve the game's localized normal Buy label and its original button glyph.
-    s_print(40, 0, 0x80F0F0F0u, normal_buy, -1);
-    line("\x13 Buy all", 16);
-    line(status, 32);
+    line("\x13 Buy all", 86);
+    line(status, 110);
 }
+
 } // namespace
 
 void load_rac1(openrac::Mod& mod) {
@@ -137,23 +138,9 @@ void load_rac1(openrac::Mod& mod) {
         s_down = down;
     });
     mod.on_frame([&mod, disc] { tick(mod, *disc); });
-    mod.hook<openrac::rac1::msg_string>([&mod, disc](auto original, std::int32_t id) -> std::int32_t {
-        const auto text = static_cast<openrac::gaddr>(original(id));
-        if (!text || (id != 0x5238 && id != 0x5239) || !s_show || s_hint == Hint::Hidden)
-            return static_cast<std::int32_t>(text);
-        std::array<Candidate, kItems> entries{};
-        openrac::gaddr ammo = 0;
-        if (!collect(mod, *disc, entries, ammo)) return static_cast<std::int32_t>(text);
-        // Return the original string's own terminator so the subsequent windowed print
-        // does not redraw its centred label over ours. No guest text is modified, and
-        // no pointer to temporary stack storage escapes this callback.
-        for (openrac::gaddr length = 0; length < 512; ++length) {
-            if (mod.memory().read<char>(text + length) == '\0') {
-                draw(mod, *disc, text);
-                return static_cast<std::int32_t>(text + length);
-            }
-        }
-        return static_cast<std::int32_t>(text);
+    mod.hook<openrac::rac1::Vendor_DrawDetails>([&mod, disc](auto original) {
+        original();
+        draw(mod, *disc);
     });
-    mod.info("Vendor Buy All 0.2.0-dev.2: RAC1 Square / Xbox X, native vendor prompt");
+    mod.info("Vendor Buy All 0.2.0-dev.3: RAC1 Square / Xbox X, details-monitor prompt");
 }
