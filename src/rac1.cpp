@@ -231,5 +231,5 @@ void load_rac1(openrac::Mod& mod) {
     });
     mod.on_frame([&mod, disc] { tick(mod, *disc); });
 
-    mod.info(std::string("Vendor Buy All 0.2.0: RAC1 compact HUD with device text and dark outline; HUD ") + (s_show ? "enabled" : "disabled"));
+    mod.info(std::string("Vendor Buy All 0.2.1: RAC1 compact HUD with device text and dark outline; HUD ") + (s_show ? "enabled" : "disabled"));
 }
