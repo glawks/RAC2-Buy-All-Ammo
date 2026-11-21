@@ -14,6 +14,11 @@ endif()
 find_package(OpenRACMod 1.20 REQUIRED)
 
 openrac_add_mod(rac2_buy_all_ammo MANIFEST openrac-mod.json SOURCES src/mod.cpp)
+# The OpenRAC SDK packages README/LICENSE automatically but not a manifest's touch file.
+# Include this layout in every native platform ZIP, so Android's vendor Square action loads.
+get_target_property(RAC2_PACKAGE_DIR rac2_buy_all_ammo OPENRAC_MOD_PACKAGE_DIR)
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/touch.json"
+               "${RAC2_PACKAGE_DIR}/touch.json" COPYONLY)
 target_include_directories(rac2_buy_all_ammo PRIVATE src)
 
 include(CTest)
