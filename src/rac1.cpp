@@ -21,6 +21,8 @@ std::string s_last_hud;
 int s_hud_level = -1;
 bool s_prompt_logged = false;
 
+void publish_hud(openrac::Mod& mod);
+
 openrac::gaddr menu(const openrac::Mod& mod, const Disc& disc) {
     return mod.relocate_level(0, disc.vendor);
 }
