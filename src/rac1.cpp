@@ -8,9 +8,7 @@
 namespace {
 using namespace buy_all_ammo;
 using Disc = vendor_buy_all::rac1::Disc;
-using Print = void (*)(int, int, std::uint64_t, openrac::gaddr, int);
 using Sound = int (*)(int, int, openrac::gaddr);
-Print s_print = nullptr;
 Sound s_sound = nullptr;
 bool s_down = false;
 bool s_pressed = false;
@@ -19,6 +17,8 @@ bool s_touch = false;
 Hint s_hint = Hint::Hidden;
 int s_cost = 0;
 int s_notice = 0;
+std::string s_last_hud;
+int s_hud_level = -1;
 bool s_prompt_logged = false;
 
 openrac::gaddr menu(const openrac::Mod& mod, const Disc& disc) {
@@ -55,6 +55,7 @@ void tick(openrac::Mod& mod, const Disc& disc) {
         s_hint = Hint::Hidden;
         s_notice = 0;
         touch(mod, false);
+        publish_hud(mod);
         return;
     }
     touch(mod, true);
@@ -86,46 +87,67 @@ void tick(openrac::Mod& mod, const Disc& disc) {
         s_hint = hint_for(quote);
         s_cost = quote.affordable.cost;
     }
+    publish_hud(mod);
 }
 
-// SDK 1.20 does not expose RAC1's Buy-label drawing pass. The text-lookup
-// hook is not a reliable place to inject graphics: the native Buy label can
-// remain visible while the additional text is discarded by the capture.
-// Vendor_DrawIconStrip runs inside a known, visible native capture. Keep the
-// overlay at the very top of the carousel; the lower half is cropped.
-void draw(openrac::Mod& mod) {
-    if (!s_show || s_hint == Hint::Hidden) return;
-
-    char text[112];
-    switch (s_hint) {
-        // \x10 is RAC1's native Square glyph, as used by its regular Buy prompt.
-        case Hint::Buy:
-            std::snprintf(text, sizeof text, "\x10 Buy all - %d bolts", s_cost);
-            break;
-        case Hint::Partial:
-            std::snprintf(text, sizeof text, "\x10 Buy all - %d bolts (partial)", s_cost);
-            break;
-        case Hint::Full:
-            std::snprintf(text, sizeof text, "\x10 Buy all - Ammo full");
-            break;
-        case Hint::Insufficient:
-            std::snprintf(text, sizeof text, "\x10 Buy all - No bolts");
-            break;
-        case Hint::Purchased:
-            std::snprintf(text, sizeof text, "\x10 Buy all - Bought");
-            break;
-        default:
-            return;
+// The vendor renders its six displays as captured textures, then calls
+// update_hud(). The released SDK supports independent native HUD text after
+// those captures. Its ASCII-only text excludes the game's 0x13 Square glyph,
+// so label the correct Square / Xbox X input explicitly for this layout test.
+void publish_hud(openrac::Mod& mod) {
+    char status[64] = {};
+    if (s_show) {
+        switch (s_hint) {
+            case Hint::Buy:
+                std::snprintf(status, sizeof status, "Cost: %d bolts", s_cost);
+                break;
+            case Hint::Partial:
+                std::snprintf(status, sizeof status, "Partial: %d bolts", s_cost);
+                break;
+            case Hint::Full:
+                std::snprintf(status, sizeof status, "Ammo full");
+                break;
+            case Hint::Insufficient:
+                std::snprintf(status, sizeof status, "Not enough bolts");
+                break;
+            case Hint::Purchased:
+                std::snprintf(status, sizeof status, "Bought");
+                break;
+            default:
+                break;
+        }
     }
-    openrac::StackFrame frame(mod, 128);
-    for (std::size_t i = 0; i <= std::char_traits<char>::length(text); ++i)
-        mod.memory().write<char>(frame.address() + static_cast<openrac::gaddr>(i), text[i]);
-
-    // Native RAC1 font; small shadow keeps it legible over the carousel.
-    s_print(11, 2, 0x80000000u, frame.address(), -1);
-    s_print(10, 1, 0x80F0F0F0u, frame.address(), -1);
-    if (!s_prompt_logged) {
-        mod.info("Vendor Buy All: RAC1 vendor carousel prompt draw reached (HUD enabled)");
+    if (status[0] == '\0') {
+        if (!s_last_hud.empty())
+            mod.hud_text_set({});
+        s_last_hud.clear();
+        s_hud_level = -1;
+        return;
+    }
+    if (s_last_hud == status && s_hud_level == mod.loaded_level())
+        return;
+    openrac_hud_text title{};
+    std::snprintf(title.text, sizeof title.text, "Square / Xbox X: Buy all");
+    title.x = 0.50f;
+    title.y = 0.695f;
+    title.scale = 0.85f;
+    title.rgba[0] = 0xF0;
+    title.rgba[1] = 0xF0;
+    title.rgba[2] = 0xF0;
+    title.rgba[3] = 0xFF;
+    title.flags = OPENRAC_HUD_SMALL | OPENRAC_HUD_SHADOW;
+    openrac_hud_text detail = title;
+    std::snprintf(detail.text, sizeof detail.text, "%s", status);
+    detail.y = 0.732f;
+    if (mod.hud_text_set({title, detail})) {
+        s_last_hud = status;
+        s_hud_level = mod.loaded_level();
+        if (!s_prompt_logged) {
+            mod.info("Vendor Buy All: RAC1 HUD text published (independent of vendor captures)");
+            s_prompt_logged = true;
+        }
+    } else if (!s_prompt_logged) {
+        mod.warn("Vendor Buy All: RAC1 HUD text API declined the shop prompt");
         s_prompt_logged = true;
     }
 }
@@ -141,8 +163,9 @@ void load_rac1(openrac::Mod& mod) {
     s_hint = Hint::Hidden;
     s_notice = s_cost = 0;
     s_prompt_logged = false;
+    s_last_hud.clear();
+    s_hud_level = -1;
     s_show = mod.setting<bool>("show_hud");
-    s_print = mod.required_function<Print>(disc->print);
     s_sound = mod.required_function<Sound>(disc->sound);
     mod.on_pad([](int port, std::uint8_t* report, int size) {
         if (port != 0 || !report || size < 2) return;
@@ -153,10 +176,6 @@ void load_rac1(openrac::Mod& mod) {
         s_down = down;
     });
     mod.on_frame([&mod, disc] { tick(mod, *disc); });
-    mod.hook<openrac::rac1::Vendor_DrawIconStrip>([&mod](auto original) {
-        // Native icons first, so our Buy All hint is captured on top of them.
-        original();
-        draw(mod);
-    });
-    mod.info(std::string("Vendor Buy All 0.2.0-dev.5: RAC1 Square / Xbox X, native carousel prompt; HUD ") + (s_show ? "enabled" : "disabled"));
+
+    mod.info(std::string("Vendor Buy All 0.2.0-dev.6: RAC1 independent HUD text, Square / Xbox X; HUD ") + (s_show ? "enabled" : "disabled"));
 }

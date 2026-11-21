@@ -6,16 +6,15 @@ namespace vendor_buy_all::rac1 {
 struct Disc {
     const char* version;
     std::uint32_t mode, vendor, table, ammo, owned;
-    const char* print;
     const char* sound;
 };
 // Executable globals: ammo and owned. Level-0 globals: mode, menu and item table.
 // Sources: rac1-decomp vendor_menu.c and game/ui/vendor.c; OpenRAC ammo-max disc tables.
 inline constexpr Disc discs[] = {
     {"pal", 0x0015F6A8u, 0x001CA7C0u, 0x001C43B0u, 0x0013D530u, 0x0013D5C8u,
-     "func_001F6968", "func_0022ED80"},
+     "func_0022ED80"},
     {"ntsc", 0x0015F5C4u, 0x001CA4C0u, 0x001C40B0u, 0x0013D428u, 0x0013D4C0u,
-     "FUN_001f65b0", "FUN_0022da68"},
+     "FUN_0022da68"},
 };
 inline constexpr int items = 37;
 inline constexpr int max_rows = 16;

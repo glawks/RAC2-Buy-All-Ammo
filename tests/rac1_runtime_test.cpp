@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
-// Exercise the real adapter callbacks with guest RAM and an SDK host stub.
+// Exercise the RAC1 adapter, HUD API lifecycle and transaction isolation.
 #include "openrac/mod.hpp"
 #include "rac1_vendor.hpp"
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -13,34 +14,21 @@ openrac_frame_fn frame_fn;
 openrac_pad_fn pad_fn;
 void* frame_user;
 void* pad_user;
-void (*draw_fn)();
-int balance=100, plays=0, last_sound=-1, originals=0, prints=0;
+int balance=100, plays=0, last_sound=-1, hud_calls=0, hud_clears=0;
 bool visible=false;
-std::vector<std::string> lines;
+std::vector<openrac_hud_text> hud;
 const vendor_buy_all::rac1::Disc* disc;
 void check(bool ok, const char* why) {
     if (!ok) { std::cerr << "FAIL: " << why << '\n'; std::exit(EXIT_FAILURE); }
 }
 openrac::Memory memory() { return openrac::Memory(ram.data()); }
-void print(int x, int y, std::uint64_t, openrac::gaddr text, int) {
-    check((x==11 && y==2) || (x==10 && y==1), "the native prompt is at the visible top of the icon carousel");
-    lines.emplace_back(reinterpret_cast<const char*>(ram.data()+text));
-    ++prints;
-}
 int sound(int id, int mode, openrac::gaddr owner) {
     check(mode==0 && owner==0x6000u, "RAC1 native sound mode and owner");
     ++plays; last_sound=id; return 1;
 }
-void original() { ++originals; }
 void* function(const char* name) {
-    if (std::string(name)==disc->print) return reinterpret_cast<void*>(&print);
     if (std::string(name)==disc->sound) return reinterpret_cast<void*>(&sound);
     return nullptr;
-}
-int hook(openrac_mod*, const char* id, const char* signature, void* replacement, void** next) {
-    check(std::string(id)=="rac1.vendor.icon_strip.draw" && std::string(signature)=="void()",
-          "RAC1 native carousel capture hook installed");
-    draw_fn=reinterpret_cast<void(*)()>(replacement); *next=reinterpret_cast<void*>(&original); return 0;
 }
 void pad(bool down) {
     std::uint8_t report[2]={0xFF,static_cast<std::uint8_t>(down?0x7F:0xFF)};
@@ -48,6 +36,20 @@ void pad(bool down) {
     check(report[0]==0xFF && report[1]==(down?0x7F:0xFF), "normal vendor input is preserved");
 }
 void tick() { frame_fn(frame_user); }
+void check_hud(const char* status) {
+    check(hud.size()==2, "two independent HUD lines published");
+    check(std::strcmp(hud[0].text,"Square / Xbox X: Buy all")==0,
+          "correct Square / Xbox X input label, not the prior Cross glyph");
+    check(std::strcmp(hud[1].text,status)==0, "live quote/status matches");
+    for (auto& line : hud) {
+        check(line.x==0.5f && (line.y==0.695f || line.y==0.732f),
+              "HUD centred between vendor controls, above carousel");
+        check(line.scale==0.85f, "text is small enough for gap");
+        check(line.flags==(OPENRAC_HUD_SMALL | OPENRAC_HUD_SHADOW),
+              "native small-font and drop-shadow flags");
+        check(line.rgba[3]==0xFF, "HUD fully opaque");
+    }
+}
 }
 int main(int argc, char** argv) {
     const std::string version=argc>1?argv[1]:"pal";
@@ -58,7 +60,19 @@ int main(int argc, char** argv) {
     api.game="rac1"; api.version=disc->version; api.memory=ram.data();
     api.log=[](openrac_mod*,int,const char*){};
     api.setting_bool=[](openrac_mod*,const char*){return 1;};
-    api.function=&function; api.hook=&hook;
+    api.function=&function;
+    api.hook=[](openrac_mod*,const char*,const char*,void*,void**) -> int {
+        check(false,"RAC1 HUD must not hijack vendor capture hooks");
+        return -1;
+    };
+    api.hud_text_set=[](openrac_mod*,const openrac_hud_text* lines,int count) {
+        ++hud_calls;
+        hud.clear();
+        if (!lines || count==0) { ++hud_clears; return 0; }
+        check(count==2,"exactly two HUD lines");
+        hud.assign(lines,lines+count);
+        return 0;
+    };
     api.on_frame=[](openrac_mod*,openrac_frame_fn fn,void* user){frame_fn=fn;frame_user=user;return 0;};
     api.on_pad=[](openrac_mod*,openrac_pad_fn fn,void* user){pad_fn=fn;pad_user=user;return 0;};
     api.loaded_level=[](){return 4;};
@@ -66,8 +80,6 @@ int main(int argc, char** argv) {
     api.relocate_level_data=[](int level,openrac_gaddr a){check(level==0,"level-0 relocation");return a;};
     api.bolts=[](int add){balance+=add;return balance;};
     api.touch_hint=[](openrac_mod*,const char*,int on){visible=on!=0;};
-    api.stack_push=[](std::uint32_t,openrac_gaddr* saved){*saved=0;return 0x10000u;};
-    api.stack_pop=[](openrac_gaddr){};
     auto m=memory();
     m.write<std::int32_t>(disc->mode,5);
     m.write<std::int32_t>(disc->vendor,1);
@@ -82,17 +94,14 @@ int main(int argc, char** argv) {
     m.write<std::uint16_t>(disc->table+2*0x18+0xE,10);
     openrac::Mod mod(&api,reinterpret_cast<openrac_mod*>(1));
     load_rac1(mod); tick();
-    draw_fn();
-    check(originals==1 && prints==2 &&
-          lines[0]=="\x10 Buy all - 35 bolts" && lines[1]==lines[0],
-          "draws native Square icon and exact quote after the original icon strip");
-    draw_fn();
-    check(originals==2 && prints==4,
-          "the native carousel remains intact and the hint renders every frame");
+    check(hud_calls==1 && hud_clears==0,"initial quote published immediately");
+    check_hud("Cost: 35 bolts");
+    tick(); check(hud_calls==1,"unchanged HUD is not resubmitted every frame");
     check(visible && plays==0,"idle quote is silent and Android action available");
     pad(true); tick();
     check(balance==65 && m.read<std::int32_t>(disc->ammo+8)==10 && plays==1 && last_sound==7,
           "one paid refill and native purchase sound");
+    check_hud("Bought");
     tick(); check(plays==1 && balance==65,"held button does not buy repeatedly");
     pad(false); tick(); pad(true); tick();
     check(balance==65 && plays==2 && last_sound==2,"full ammo rejects once without charging");
@@ -107,10 +116,9 @@ int main(int argc, char** argv) {
     pad(false); tick(); m.write<std::int32_t>(disc->vendor+0x5C,2);
     const int before=plays; pad(true); tick();
     check(plays==before && balance==5 && !visible,"manual dialog blocks transactions and touch action");
-    prints=0; draw_fn();
-    check(originals==3 && prints==0,"manual purchase dialog keeps normal carousel but hides custom hint");
+    check(hud_clears==1 && hud.empty(),"manual dialog clears HUD");
     m.write<std::int32_t>(disc->vendor+0x5C,0);
     m.write<std::int32_t>(disc->mode,0); pad(false); tick(); pad(true); tick();
-    check(plays==before && balance==5,"gameplay outside vendor blocks transactions");
-    std::cout << "RAC1 " << version << " runtime purchase, sound, input and native prompt checks passed\n";
+    check(plays==before && balance==5 && hud_clears==1,"outside vendor blocks transactions");
+    std::cout << "RAC1 " << version << " runtime purchase, sound, input and independent HUD checks passed\n";
 }

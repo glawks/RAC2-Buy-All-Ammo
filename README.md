@@ -12,7 +12,7 @@ Press **Square** (PlayStation) or **X** (Xbox) in the vendor's main list to buy 
 
 ## Development build
 
-**0.2.0-dev.5** introduces RAC1 support and renames the mod ID from `rac2-buy-all-ammo` to **`vendor-buy-all`**. RAC2's purchase behaviour, native prompt and sounds were tested in-game during development. RAC1 purchases and both success/rejection sounds have also been confirmed in-game. **This build replaces the unreliable RAC1 message-lookup renderer with the SDK's native vendor-icon-strip hook; visual placement still needs in-game testing**, along with PDA prices and save/load behaviour.
+**0.2.0-dev.6** introduces RAC1 support and renames the mod ID from `rac2-buy-all-ammo` to **`vendor-buy-all`**. RAC2's purchase behaviour, native prompt and sounds were tested in-game during development. RAC1 purchases and both success/rejection sounds have also been confirmed in-game. **This build moves the RAC1 Buy All prompt out of the weapon carousel and into the SDK's independent HUD text layer; its in-game appearance still needs testing**, along with PDA prices and save/load behaviour.
 
 Remove the old **RAC2 Buy All Ammo** installation before enabling **Vendor Buy All**. The new ID is a separate mod to the launcher; leaving both active can cause duplicate input handlers and prompts. Settings under the old ID are not migrated.
 
@@ -23,11 +23,11 @@ Remove the old **RAC2 Buy All Ammo** installation before enabling **Vendor Buy A
 
 ## Native prompts
 
-**RAC1:** The native Buy and Exit monitors remain unchanged. The buy-all hint and live quote are drawn with `FontPrintSmall` along the **top edge of the bottom carousel monitor**, using RAC1's native Square/Xbox X glyph. This is an initial visible placement, intended for visual testing before polishing. SDK 1.20 exposes `Vendor_DrawIconStrip` but not the separate Buy-label rendering pass. The Gadgetron PDA's alternate ammo price is supported.
+**RAC1:** The native Buy and Exit monitors and the weapon carousel stay unchanged. SDK 1.20's `hud_text_set` places two small-font lines **between Buy and Exit, above the carousel**: `Square / Xbox X: Buy all` and the live price or status. Because this API only accepts printable ASCII, native Square (`0x13`) cannot render there: the temporary label names the correct button instead of showing the incorrect Cross glyph. Visual placement still needs an in-game test. Gadgetron PDA alternate prices remain supported.
 
 **RAC2:** A separate bordered box below the regular Buy control contains the buy-all prompt and status. Under Mod settings, **RAC2 vendor HUD position** can move it to the top or bottom right. **Show vendor ammo HUD** applies to both games.
 
-The native Square glyph follows the shared font artwork, including the separate [Xbox Icons mod](https://github.com/OpenRAC/openrac-mods/tree/master/xbox-icons). Keyboard prompt changes use OpenRAC's shared font handling; no Xbox artwork is bundled or painted by this mod. RAC1's carousel prompt position and Xbox/PlayStation input glyph transitions require in-game verification.
+**RAC2** retains its native Square glyph and support for the [Xbox Icons mod](https://github.com/OpenRAC/openrac-mods/tree/master/xbox-icons) and keyboard/controller switching. **RAC1's HUD text is a layout test:** the API omits native button control glyphs and doesn't support automatic prompt replacement, so it explicitly labels `Square / Xbox X`. A native icon will require a rendering API that accepts RAC1's actual `0x13` glyph. No artwork is bundled.
 
 ## Test downloads and releases
 
@@ -42,7 +42,7 @@ Each push to **dev** builds six platforms and uploads downloadable Actions artif
 | macOS Intel | `macos-x86_64` |
 | Android ARM64 | `android-arm64` |
 
-Open **Actions → build → latest successful dev run → Artifacts → mod-release**. Extract the **`vendor-buy-all-0.2.0-dev.5.zip`** inside that artifact, then install that inner combined ZIP in OpenRAC's launcher. The outer Actions ZIP is not an installable mod. Separate platform ZIPs and `SHA256SUMS` are also included.
+Open **Actions → build → latest successful dev run → Artifacts → mod-release**. Extract the **`vendor-buy-all-0.2.0-dev.6.zip`** inside that artifact, then install that inner combined ZIP in OpenRAC's launcher. The outer Actions ZIP is not an installable mod. Separate platform ZIPs and `SHA256SUMS` are also included.
 
 The workflow uses the current repository name automatically, so renaming the GitHub repository to `vendor-buy-all` requires no additional workflow change. On **main**, a push with a new stable manifest version publishes a release after all six platform builds and packaging checks succeed. A development version, pull request or manual workflow run does not publish a release. Existing releases are preserved.
 
@@ -59,13 +59,13 @@ ctest --test-dir build --output-on-failure
 
 SDK 1.20 is pinned by version and SHA256 in `sdk.lock`. To use a local SDK, pass `-DOPENRAC_SDK=/path/to/sdk`. Package `build/package/vendor_buy_all` with the SDK's `tools/package_mod.py`.
 
-Tests cover bounded and partial purchases, invalid entries, full-ammo and insufficient-bolts quotes, duplicate entries, and RAC1 vendor-state guards, stock ownership, manual-dialog exclusion and PDA alternate prices. Runtime tests also exercise each RAC1 disc adapter through SDK callbacks with simulated game memory, checking payment, ammo changes, one purchase per press, native sound IDs, dialog exclusion and the native prompt draw. They cannot establish in-game visual placement or audio playback.
+Tests cover bounded and partial purchases, invalid entries, full-ammo and insufficient-bolts quotes, duplicate entries, and RAC1 vendor-state guards, stock ownership, manual-dialog exclusion and PDA alternate prices. Runtime tests also exercise both RAC1 disc adapters through SDK callbacks with simulated game memory, checking payment, ammo changes, one purchase per press, native sound IDs, dialog exclusion, HUD coordinates and prompt cleanup. They cannot establish in-game visual placement or audio playback.
 
 ## Implementation
 
 Each game has its own vendor adapter and native drawing path. Both share the purchase planner in `src/purchase_plan.hpp`. The gameplay tick reads the active vendor's ammo rows, computes a quote from the current balance, deducts its bounded total through the SDK's bolts interface and adds the purchased rounds on the game thread.
 
-RAC1 data and sound behaviour are based on `OpenRAC/rac1-decomp`'s `vendor_menu.c`, `game/ui/vendor.c`, and the per-disc addresses documented by OpenRAC's ammo-max and cheats mods. A `Vendor_DrawIconStrip` hook calls the original icon-strip render first, then draws the native Square Buy All prompt and status over the carousel's top edge in the same off-screen capture. The hook never modifies game message strings or purchase handlers, and draws nothing outside the vendor's valid main list. The dedicated item-details hook on OpenRAC's development branch is not included in SDK 1.20.
+RAC1 data and sound behaviour are based on `OpenRAC/rac1-decomp`'s `vendor_menu.c`, `game/ui/vendor.c`, and the per-disc addresses documented by OpenRAC's ammo-max and cheats mods. RAC1 needs no vendor draw hook: its frame callback publishes two `openrac_hud_text` lines to the host, updates when the status changes, and clears them on exit or during a purchase dialog. The native vendor captures and mechanical purchase paths are untouched; SDK 1.20 does not expose the vendor Buy-label draw pass.
 
 RAC2 uses its existing vendor list adapter and `Vendor_DrawList` hook. Sound IDs 7 (purchase) and 2 (rejection) use each game's own vendor owner and sound mode. The manifest names hooks by stable, game-qualified IDs so the launcher can load the correct adapter.
 
