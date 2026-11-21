@@ -3,8 +3,7 @@
 // Addresses: OpenRAC/openrac-mods ng-plus-plus/src/discs.h and difficulty-mod/src/rac2/discs.h.
 // Vendor record: OpenRAC/rac2-decomp src/game/002F5220-purchase.c and 002F5220-menu.c.
 //
-// The gameplay tick owns all guest-memory reads and writes. The port's overlay can run on a
-// different (render) thread: its callback reads only ONE atomically published HUD snapshot.
+// Gameplay and native vendor drawing run on the game thread. The tick publishes one HUD quote.
 #include "openrac/mod.hpp"
 #include "openrac/games/rac2.hpp"
 #include "purchase_plan.hpp"
@@ -58,10 +57,12 @@ using Print = void (*)(float, float, std::uint64_t, openrac::gaddr, int, float, 
 using Texture = std::uint64_t (*)(int);
 using Scissor = void (*)(int, int, int, int);
 using Sound = int (*)(int, int, openrac::gaddr);
+using Rect = void (*)(int, int, int, int, std::uint64_t);
 Print s_print = nullptr;
 Texture s_texture = nullptr;
 Scissor s_scissor = nullptr;
 Sound s_sound = nullptr;
+Rect s_rect = nullptr;
 bool s_square_was_down = false;
 bool s_square_just_pressed = false;
 bool s_show_hud = true;
@@ -97,9 +98,9 @@ void draw_hud(openrac::Mod& mod) {
         default: return;
     }
     const bool left = s_hud_position == "vendor_left";
-    // Vendor panels use the centred 4:3 game UI, not the stretched overlay canvas.
+    // A separate box below the normal Buy control, in the centred game UI.
     const float centre_x = left ? 76.0f : 410.0f;
-    const float y = left ? 165.0f : s_hud_position == "top_right" ? 35.0f : 391.0f;
+    const float y = left ? 215.0f : s_hud_position == "top_right" ? 35.0f : 391.0f;
     // PAL's vendor stretches its vertical coordinates by 1.2 and offsets them by four.
     const bool pal = mod.version() == "pal";
     const float scale_y = pal ? 1.2f : 1.0f;
@@ -125,6 +126,12 @@ void draw_hud(openrac::Mod& mod) {
                 scale, s_texture(2), glyphs);
     };
     s_scissor(0, 511, 0, pal ? 511 : 447);
+    const auto screen_y = [&](float at) { return static_cast<int>(at * scale_y + offset_y); };
+    // Native GS colours are AABBGGRR. A border and inset tie both lines together.
+    const int box_left = static_cast<int>(centre_x - 58.0f);
+    const int box_right = static_cast<int>(centre_x + 58.0f);
+    s_rect(screen_y(y - 5.0f), screen_y(y + 30.0f), box_left, box_right, 0x807CADBFu);
+    s_rect(screen_y(y - 4.0f), screen_y(y + 29.0f), box_left + 1, box_right - 1, 0x7032240Bu);
     // RAC2's Square glyph, not a literal controller name. OpenRAC replaces this font
     // cell with the current input's prompt, just as it does for the vendor's Exit icon.
     line("\x13 Buy all", y, 0.85f);
@@ -182,6 +189,12 @@ int candidates_at_vendor(const openrac::Mod& mod,
     return out_count;
 }
 
+void vendor_sound(openrac::Mod& mod, int sound) {
+    const auto vendor = mod.relocate(mod.version() == "ntsc" ? 0x0021F240u : 0x0021F1C0u);
+    const auto owner = vendor ? mod.memory().read<openrac::gaddr>(vendor + 0x28u) : 0;
+    if (owner) s_sound(sound, 17, owner);
+}
+
 void buy(openrac::Mod& mod,
          openrac::gaddr ammo_addr,
          const buy_all_ammo::Plan& plan) {
@@ -195,9 +208,7 @@ void buy(openrac::Mod& mod,
         memory.write<std::int32_t>(addr, memory.read<std::int32_t>(addr) + purchase.amount);
     }
     // The same sound, mode and vendor owner as VendorPurchaseDialogUpdate.
-    const auto vendor = mod.relocate(mod.version() == "ntsc" ? 0x0021F240u : 0x0021F1C0u);
-    const auto owner = vendor ? memory.read<openrac::gaddr>(vendor + 0x28u) : 0;
-    if (owner) s_sound(7, 17, owner);
+    vendor_sound(mod, 7);
     mod.info("Buy All Ammo: purchased " + std::to_string(plan.count) +
              " ammo types for " + std::to_string(plan.cost) + " bolts");
 }
@@ -218,13 +229,17 @@ void tick(openrac::Mod& mod, const Disc& disc) {
 
     const auto quote = buy_all_ammo::make_quote(candidates, count, mod.bolts());
     const auto hint = buy_all_ammo::hint_for(quote);
-    touch_buy_button(mod, hint == buy_all_ammo::Hint::Buy ||
-                              hint == buy_all_ammo::Hint::Partial);
+    // Keep the action available for native rejection feedback on Android as well.
+    touch_buy_button(mod, true);
 
     if (square && quote.affordable.cost > 0 && quote.affordable.count > 0) {
         buy(mod, ammo_addr, quote.affordable);
         s_notice_ticks = (std::string(disc.version) == "pal") ? 100 : 120;
         s_notice_cost = quote.affordable.cost;
+    } else if (square) {
+        // The normal vendor's rejection sound: once per press, never on an idle quote.
+        vendor_sound(mod, 2);
+        s_notice_ticks = 0;
     }
     if (s_notice_ticks > 0) {
         --s_notice_ticks;
@@ -256,6 +271,7 @@ void load(openrac::Mod& mod) {
     s_texture = mod.required_function<Texture>(pal ? "func_0027CD60" : us2 ? "func_0027CED8" : "func_0027C878");
     s_scissor = mod.required_function<Scissor>(pal ? "func_002FD678" : us2 ? "func_002FD4B0" : "func_002FC620");
     s_sound = mod.required_function<Sound>("func_002E5CF8");
+    s_rect = mod.required_function<Rect>(pal ? "func_0027E338" : us2 ? "func_0027E4D0" : "func_0027DE50");
     mod.hook<openrac::rac2::Vendor_DrawList>([&mod](auto original) {
         // The list establishes its own scissor after our text, so its clipping is preserved.
         draw_hud(mod);
@@ -272,8 +288,8 @@ void load(openrac::Mod& mod) {
     });
 
     mod.on_frame([&mod, disc] { tick(mod, *disc); });
-    mod.info("RAC2 Buy All Ammo dev.4: Square / Xbox X, vendor HUD and Android touch button");
+    mod.info("RAC2 Buy All Ammo dev.5: Square / Xbox X, vendor HUD and Android touch button");
 }
 } // namespace
 
-OPENRAC_MOD_CPP("rac2-buy-all-ammo", "0.1.0-dev.4", load)
+OPENRAC_MOD_CPP("rac2-buy-all-ammo", "0.1.0-dev.5", load)
