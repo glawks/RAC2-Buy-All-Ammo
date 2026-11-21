@@ -71,7 +71,7 @@ int main(int argc, char** argv) {
     api.log=[](openrac_mod*,int,const char*){};
     api.setting_bool=[](openrac_mod*,const char*){return 1;};
     api.setting_string=[](openrac_mod*,const char*){return controller_setting;};
-    api.input=[](){return &keyboard;};
+    api.input=[]() -> const openrac_input* {return &keyboard;};
     api.function=&function;
     api.hook=[](openrac_mod*,const char*,const char*,void*,void**) -> int {
         check(false,"native capture hook should be untouched");
