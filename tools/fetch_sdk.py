@@ -43,7 +43,14 @@ elif "source_commit" in lock:
             raise ValueError("Pinned commit is missing the SDK CMake package")
     finally:
         if tmp.exists():
-            shutil.rmtree(tmp)
+            try:
+                shutil.rmtree(tmp)
+            except PermissionError:
+                # Windows runners can briefly keep a Git pack file locked after
+                # checkout. The source checkout is ignored in .sdk/; a verified,
+                # staged SDK is sufficient, so cleanup need not fail the build.
+                if not (folder / "cmake" / "OpenRACModConfig.cmake").is_file():
+                    raise
     print(folder)
 else:
     data = urllib.request.urlopen(lock["url"], timeout=60).read()
