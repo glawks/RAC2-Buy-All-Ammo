@@ -1,66 +1,93 @@
 // SPDX-License-Identifier: MIT
 #include "openrac/mod.hpp"
-#include "openrac/games/rac1.hpp"
 #include "rac1_vendor.hpp"
 #include <array>
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
-#include <vector>
 #include <string>
 
 namespace {
 using namespace buy_all_ammo;
 using Disc = vendor_buy_all::rac1::Disc;
 using Sound = int (*)(int, int, openrac::gaddr);
+
 Sound s_sound = nullptr;
 bool s_down = false;
 bool s_pressed = false;
-bool s_pad_activity = false;
-bool s_keyboard_active = false;
-std::uint16_t s_prev_buttons = 0xFFFFu;
-std::string s_controller_label = "X";
 bool s_show = true;
 bool s_touch = false;
 Hint s_hint = Hint::Hidden;
 int s_cost = 0;
 int s_notice = 0;
-std::string s_last_hud;
-int s_hud_level = -1;
-bool s_prompt_logged = false;
 
-void publish_hud(openrac::Mod& mod);
-
-// SDK 1.20 supplies keyboard activity, but not gamepad identity.
-// Track keyboard activity versus pad button edges; controller label is selectable.
-void update_input_label(openrac::Mod& mod) {
-    bool keyboard_activity = false;
-    if (mod.has_input()) {
-        const auto& input = mod.input().raw();
-        if (input.focused) {
-            for (const auto key : input.keys) {
-                if ((key & OPENRAC_KEY_PRESSED) != 0) {
-                    keyboard_activity = true;
-                    break;
-                }
-            }
-            keyboard_activity = keyboard_activity || input.mouse_pressed != 0 ||
-                input.mouse_dx != 0.0f || input.mouse_dy != 0.0f ||
-                input.wheel_x != 0.0f || input.wheel_y != 0.0f;
-        }
-    }
-    if (keyboard_activity)
-        s_keyboard_active = true;
-    else if (s_pad_activity)
-        s_keyboard_active = false;
-    s_pad_activity = false;
+// The game thread publishes a compact immutable snapshot; the overlay draws
+// on the window thread without touching guest RAM or non-atomic game state.
+std::atomic<std::uint64_t> s_prompt{0};
+constexpr std::uint64_t kHintMask = 0xFFu;
+constexpr unsigned kCostShift = 8u;
+void publish_prompt() {
+    const auto hint = s_show ? s_hint : Hint::Hidden;
+    const std::uint64_t bits =
+        (static_cast<std::uint64_t>(static_cast<std::uint32_t>(s_cost)) << kCostShift)
+        | static_cast<std::uint64_t>(hint);
+    s_prompt.store(bits, std::memory_order_release);
 }
 
+// The native 512 x 448 vendor picture: between Buy and Exit monitors,
+// above the weapon carousel. Adapted from SDK 1.31's vendor-prompt example.
+constexpr float kPanelX = 176.0f;
+constexpr float kPanelY = 268.0f;
+constexpr float kPanelW = 160.0f;
+constexpr float kPanelH = 28.0f;
+void draw_prompt(void*, const openrac_overlay* o) {
+    if (!o || o->size < offsetof(openrac_overlay, phase) + sizeof(o->phase) ||
+        o->phase != OPENRAC_OVERLAY_MENU || !o->rect || !o->text || !o->text_width)
+        return;
+    const auto bits = s_prompt.load(std::memory_order_acquire);
+    const auto hint = static_cast<Hint>(bits & kHintMask);
+    if (hint == Hint::Hidden) return;
+    const auto cost = static_cast<std::uint32_t>(bits >> kCostShift);
+    char prompt[96] = {};
+    switch (hint) {
+        case Hint::Buy:
+            std::snprintf(prompt, sizeof(prompt), OPENRAC_UI_SQUARE " Buy all - %u bolts", cost);
+            break;
+        case Hint::Partial:
+            std::snprintf(prompt, sizeof(prompt), OPENRAC_UI_SQUARE " Buy all - %u bolts (partial)", cost);
+            break;
+        case Hint::Full:
+            std::snprintf(prompt, sizeof(prompt), OPENRAC_UI_SQUARE " Buy all - Ammo full");
+            break;
+        case Hint::Insufficient:
+            std::snprintf(prompt, sizeof(prompt), OPENRAC_UI_SQUARE " Buy all - Not enough bolts");
+            break;
+        case Hint::Purchased:
+            std::snprintf(prompt, sizeof(prompt), OPENRAC_UI_SQUARE " Buy all - Bought: %u bolts", cost);
+            break;
+        default: return;
+    }
+
+    // RRGGBBAA: translucent charcoal and a subtle accent along its top.
+    // OPENRAC_UI_SQUARE is rendered by the port as the currently active input.
+    o->rect(o->context, kPanelX, kPanelY, kPanelW, kPanelH, 0x080B10B8u);
+    o->rect(o->context, kPanelX, kPanelY, kPanelW, 1.6f, 0x6192B8D0u);
+    float height = 15.0f;
+    float width = o->text_width(o->context, height, prompt);
+    while (width > kPanelW - 12.0f && height > 10.0f) {
+        height -= 1.0f;
+        width = o->text_width(o->context, height, prompt);
+    }
+    o->text(o->context, kPanelX + (kPanelW - width) * 0.5f,
+            kPanelY + (kPanelH - height) * 0.5f, height, 0xF4F6FFFFu, prompt);
+}
 openrac::gaddr menu(const openrac::Mod& mod, const Disc& disc) {
     return mod.relocate_level(0, disc.vendor);
 }
 void sound(openrac::Mod& mod, const Disc& disc, int id) {
     const auto vendor = menu(mod, disc);
     const auto owner = vendor ? mod.memory().read<openrac::gaddr>(vendor + 0x1Cu) : 0;
-    // RAC1 uses mode 0, RAC2 uses 17; both use vendor sound 7 for buying, 2 for rejection.
     if (owner) s_sound(id, 0, owner);
 }
 void touch(openrac::Mod& mod, bool visible) {
@@ -79,7 +106,6 @@ int collect(openrac::Mod& mod, const Disc& disc,
         mod.relocate_level(0, disc.table), ammo, mod.relocate(disc.owned), out);
 }
 void tick(openrac::Mod& mod, const Disc& disc) {
-    update_input_label(mod);
     const bool pressed = s_pressed;
     s_pressed = false;
     std::array<Candidate, kItems> entries{};
@@ -89,7 +115,7 @@ void tick(openrac::Mod& mod, const Disc& disc) {
         s_hint = Hint::Hidden;
         s_notice = 0;
         touch(mod, false);
-        publish_hud(mod);
+        publish_prompt();
         return;
     }
     touch(mod, true);
@@ -121,86 +147,8 @@ void tick(openrac::Mod& mod, const Disc& disc) {
         s_hint = hint_for(quote);
         s_cost = quote.affordable.cost;
     }
-    publish_hud(mod);
+    publish_prompt();
 }
-
-// One compact prompt, centred between the vendor buttons above the carousel.
-// SDK 1.20's on_overlay rectangle API is disabled in vendor/menu mode, so it
-// cannot make a real panel. Translucent dark text offsets add readability.
-void publish_hud(openrac::Mod& mod) {
-    char prompt[64] = {};
-    if (s_show) {
-        const char* key = s_keyboard_active ? "F" : s_controller_label.c_str();
-        switch (s_hint) {
-            case Hint::Buy:
-                std::snprintf(prompt, sizeof prompt, "%s Buy All - %d bolts", key, s_cost);
-                break;
-            case Hint::Partial:
-                std::snprintf(prompt, sizeof prompt, "%s Buy All - Partial %d bolts", key, s_cost);
-                break;
-            case Hint::Full:
-                std::snprintf(prompt, sizeof prompt, "%s Buy All - Ammo full", key);
-                break;
-            case Hint::Insufficient:
-                std::snprintf(prompt, sizeof prompt, "%s Buy All - No bolts", key);
-                break;
-            case Hint::Purchased:
-                std::snprintf(prompt, sizeof prompt, "%s Buy All - Bought", key);
-                break;
-            default:
-                break;
-        }
-    }
-    if (prompt[0] == '\0') {
-        if (!s_last_hud.empty())
-            mod.hud_text_set({});
-        s_last_hud.clear();
-        s_hud_level = -1;
-        return;
-    }
-    if (s_last_hud == prompt && s_hud_level == mod.loaded_level())
-        return;
-    openrac_hud_text foreground{};
-    std::snprintf(foreground.text, sizeof foreground.text, "%s", prompt);
-    foreground.x = 0.50f;
-    foreground.y = 0.716f;
-    foreground.scale = 0.85f;
-    foreground.rgba[0] = 0xF0;
-    foreground.rgba[1] = 0xF0;
-    foreground.rgba[2] = 0xF0;
-    foreground.rgba[3] = 0xFF;
-    foreground.flags = OPENRAC_HUD_SMALL | OPENRAC_HUD_SHADOW;
-
-    std::vector<openrac_hud_text> lines;
-    lines.reserve(5);
-    for (const auto& offset : std::array<std::array<float, 2>, 4>{{
-            {{-0.0025f, -0.0025f}},
-            {{ 0.0025f, -0.0025f}},
-            {{-0.0025f,  0.0025f}},
-            {{ 0.0025f,  0.0025f}}
-        }}) {
-        auto shadow = foreground;
-        shadow.x += offset[0];
-        shadow.y += offset[1];
-        shadow.rgba[0] = shadow.rgba[1] = shadow.rgba[2] = 0x00;
-        shadow.rgba[3] = 0x98;
-        shadow.flags = OPENRAC_HUD_SMALL;
-        lines.push_back(shadow);
-    }
-    lines.push_back(foreground);
-    if (mod.hud_text_set(lines)) {
-        s_last_hud = prompt;
-        s_hud_level = mod.loaded_level();
-        if (!s_prompt_logged) {
-            mod.info("Vendor Buy All: RAC1 compact HUD text published");
-            s_prompt_logged = true;
-        }
-    } else if (!s_prompt_logged) {
-        mod.warn("Vendor Buy All: RAC1 HUD text API declined the shop prompt");
-        s_prompt_logged = true;
-    }
-}
-
 } // namespace
 
 void load_rac1(openrac::Mod& mod) {
@@ -208,28 +156,25 @@ void load_rac1(openrac::Mod& mod) {
     for (const auto& candidate : vendor_buy_all::rac1::discs)
         if (mod.version() == candidate.version) disc = &candidate;
     if (!disc) throw openrac::Error("Unknown RAC1 disc version");
-    s_down = s_pressed = s_touch = s_pad_activity = s_keyboard_active = false;
-    s_prev_buttons = 0xFFFFu;
-    s_controller_label = mod.setting<std::string>("rac1_controller_label") == "playstation" ? "Square" : "X";
+    if (!mod.has_overlay_phases())
+        throw openrac::Error("RAC1 menu overlay requires OpenRAC API 1.31");
+    s_down = s_pressed = s_touch = false;
     s_hint = Hint::Hidden;
-    s_notice = s_cost = 0;
-    s_prompt_logged = false;
-    s_last_hud.clear();
-    s_hud_level = -1;
+    s_cost = s_notice = 0;
+    s_prompt.store(0, std::memory_order_relaxed);
     s_show = mod.setting<bool>("show_hud");
     s_sound = mod.required_function<Sound>(disc->sound);
     mod.on_pad([](int port, std::uint8_t* report, int size) {
         if (port != 0 || !report || size < 2) return;
         const auto buttons = static_cast<std::uint16_t>(report[0]) |
                              (static_cast<std::uint16_t>(report[1]) << 8);
-        if ((s_prev_buttons & static_cast<std::uint16_t>(~buttons)) != 0)
-            s_pad_activity = true;
-        s_prev_buttons = buttons;
         const bool down = (buttons & 0x8000u) == 0;
         if (down && !s_down) s_pressed = true;
         s_down = down;
     });
     mod.on_frame([&mod, disc] { tick(mod, *disc); });
-
-    mod.info(std::string("Vendor Buy All 0.2.0-dev.7: RAC1 compact HUD with device text and dark outline; HUD ") + (s_show ? "enabled" : "disabled"));
+    if (!mod.on_overlay_phases(draw_prompt, nullptr, OPENRAC_OVERLAY_MENU))
+        throw openrac::Error("OpenRAC refused RAC1's vendor menu overlay");
+    mod.info(std::string("Vendor Buy All 0.2.2-dev.1: RAC1 SDK 1.31 native panel; HUD ")
+             + (s_show ? "enabled" : "disabled"));
 }

@@ -110,6 +110,7 @@ jobs:
           with zipfile.ZipFile(archive) as z:
               names = set(z.namelist())
               assert 'openrac-mod.json' in names, names
+              assert 'README.md' in names and 'LICENSE' in names
               assert any(n.startswith(f'lib/{platform}/') and 'vendor_buy_all' in n for n in names), names
           PY
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

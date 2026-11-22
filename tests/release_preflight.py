@@ -12,7 +12,10 @@ assert manifest["id"] == "vendor-buy-all"
 assert manifest["games"] == {"rac1": ["pal", "ntsc"], "rac2": ["ntsc", "pal", "ntsc2"]}
 assert re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?", manifest["version"])
 assert f'OPENRAC_MOD_CPP("{manifest["id"]}", "{manifest["version"]}", load)' in source
-assert manifest["api"] == "1.20"
+assert manifest["api"] == "1.31"
+lock = json.loads((root / "sdk.lock").read_text(encoding="utf-8"))
+assert lock["version"] == "1.31.0"
+assert lock["source_commit"] == "cbb5ea2f8e0a4a75b1ad1a50e70acdd83bb10522"
 assert manifest["hooks"] == ["rac2.vendor.draw_list"]
 assert (root / "src/purchase_plan.hpp").is_file()
 print(f'Preflight passed: {manifest["id"]} {manifest["version"]}')

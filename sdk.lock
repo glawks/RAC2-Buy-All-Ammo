@@ -1,5 +1,7 @@
 {
-  "version": "1.20.0",
-  "url": "https://github.com/OpenRAC/OpenRAC/releases/download/sdk-v1.20.0/openrac-mod-sdk-1.20.0.zip",
-  "sha256": "4a9f042597d895802d00eca0571a5d6d378ca6e995b2f3a55d59bb90919e0eba"
+  "version": "1.31.0",
+  "source_repository": "https://github.com/OpenRAC/OpenRAC.git",
+  "source_commit": "cbb5ea2f8e0a4a75b1ad1a50e70acdd83bb10522",
+  "source_path": "sdk",
+  "note": "Dev-only SDK 1.31 pinned to the merged PR #691 commit; main stable SDK is unaffected."
 }

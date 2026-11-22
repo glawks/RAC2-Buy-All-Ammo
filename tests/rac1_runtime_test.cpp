@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Simulates vendor memory, pad and keyboard inputs, and the HUD text API.
+// Simulate RAC1 vendor transactions, sound events and SDK 1.31 menu overlays.
 #include "openrac/mod.hpp"
 #include "rac1_vendor.hpp"
 #include <cstdlib>
@@ -8,133 +8,144 @@
 #include <string>
 #include <vector>
 void load_rac1(openrac::Mod&);
+
 namespace {
 std::vector<std::uint8_t> ram(0x02000000u);
-openrac_frame_fn frame_fn;
-openrac_pad_fn pad_fn;
-void* frame_user;
-void* pad_user;
-int balance=100, plays=0, last_sound=-1, hud_calls=0, hud_clears=0;
+openrac_frame_fn frame_fn = nullptr;
+openrac_pad_fn pad_fn = nullptr;
+openrac_overlay_fn overlay_fn = nullptr;
+void *frame_user = nullptr, *pad_user = nullptr, *overlay_user = nullptr;
+int balance=100, plays=0, last_sound=-1, draws=0, rects=0, texts=0;
 bool visible=false;
-std::vector<openrac_hud_text> hud;
-openrac_input keyboard{};
-const char* controller_setting="xbox";
-const vendor_buy_all::rac1::Disc* disc;
-void check(bool ok, const char* why) {
-    if (!ok) { std::cerr << "FAIL: " << why << '\n'; std::exit(EXIT_FAILURE); }
+std::string rendered;
+const vendor_buy_all::rac1::Disc* disc=nullptr;
+void check(bool ok,const char* reason) {
+    if(!ok) {std::cerr<<"FAIL: "<<reason<<'\n';std::exit(EXIT_FAILURE);}
 }
-openrac::Memory memory() { return openrac::Memory(ram.data()); }
-int sound(int id, int mode, openrac::gaddr owner) {
-    check(mode==0 && owner==0x6000u, "RAC1 native sound mode and owner");
-    ++plays; last_sound=id; return 1;
+openrac::Memory memory() {return openrac::Memory(ram.data());}
+int sound(int id,int mode,openrac::gaddr owner) {
+    check(mode==0&&owner==0x6000u,"native RAC1 sound mode/owner");
+    ++plays;last_sound=id;return 1;
 }
 void* function(const char* name) {
-    if (std::string(name)==disc->sound) return reinterpret_cast<void*>(&sound);
-    return nullptr;
+    return std::string(name)==disc->sound?reinterpret_cast<void*>(&sound):nullptr;
 }
 void pad(bool down) {
     std::uint8_t report[2]={0xFF,static_cast<std::uint8_t>(down?0x7F:0xFF)};
     pad_fn(pad_user,0,report,2);
-    check(report[0]==0xFF && report[1]==(down?0x7F:0xFF), "normal vendor input is preserved");
+    check(report[0]==0xFF&&report[1]==(down?0x7F:0xFF),"unchanged native pad state");
 }
-void tick() { frame_fn(frame_user); }
-void check_hud(const std::string& expected) {
-    check(hud.size()==5, "four outline passes and a single foreground line");
-    for (size_t i=0;i<hud.size();++i) {
-        const auto& line=hud[i];
-        check(std::string(line.text)==expected, "all copies display the expected input and status");
-        check(line.scale==0.85f && (line.flags & OPENRAC_HUD_SMALL),
-              "small native font on all copies");
-        if (i+1==hud.size()) {
-            check(line.x==0.50f && line.y==0.716f,
-                  "single visible line centred above the carousel");
-            check(line.rgba[3]==0xFF && (line.flags & OPENRAC_HUD_SHADOW),
-                  "foreground opaque with native shadow");
-        } else {
-            check(line.rgba[0]==0 && line.rgba[1]==0 && line.rgba[2]==0 &&
-                  line.rgba[3]==0x98,"subtle dark outline");
-        }
-    }
+void tick(){frame_fn(frame_user);}
+void rect(void*,float x,float y,float w,float h,std::uint32_t rgba) {
+    ++rects;
+    check(x==176.0f&&y==268.0f&&w==160.0f&&h>0,
+          "RAC1 panel between vendor controls, above weapon carousel");
+    check((rgba&0xFFu)!=0,"panel is visibly translucent");
+}
+void overlay_text(void*,float x,float y,float height,std::uint32_t rgba,const char* str) {
+    ++texts;rendered=str;
+    check(x>=176.0f&&x<=336.0f&&y>=268.0f&&y<296.0f,
+          "prompt remains within vendor panel");
+    check(height>=10.0f&&height<=15.0f&&rgba==0xF4F6FFFFu,
+          "one readable overlay text line");
+    check(!rendered.empty()&&rendered[0]==OPENRAC_UI_SQUARE[0],
+          "native Square button token, not a fixed pad/keyboard label");
+}
+float text_width(void*,float height,const char* str) {
+    return static_cast<float>(std::strlen(str))*height*0.55f;
+}
+void draw(unsigned phase=OPENRAC_OVERLAY_MENU) {
+    openrac_overlay o{};
+    o.size=sizeof o;o.phase=phase;
+    o.rect=&rect;o.text=&overlay_text;o.text_width=&text_width;
+    const int before=texts;
+    overlay_fn(overlay_user,&o);
+    if(texts>before)++draws;
+}
+void expect(const std::string& prompt) {
+    check(rendered==prompt,"native token and quote/status current");
+    check(rects==2*draws&&texts==draws,
+          "one text line over two background rectangles");
 }
 }
-int main(int argc, char** argv) {
+int main(int argc,char** argv) {
     const std::string version=argc>1?argv[1]:"pal";
-    for (const auto& d : vendor_buy_all::rac1::discs) if (version==d.version) disc=&d;
-    check(disc!=nullptr,"known disc fixture");
-    controller_setting=(argc>2 && std::string(argv[2])=="playstation") ? "playstation" : "xbox";
-    const std::string pad_label=std::string(controller_setting)=="playstation" ? "Square" : "X";
-    keyboard.size=sizeof keyboard;
-    keyboard.focused=1;
+    for(const auto& d:vendor_buy_all::rac1::discs)if(version==d.version)disc=&d;
+    check(disc!=nullptr,"supported disc fixture");
     openrac_api api{};
-    api.size=sizeof api; api.api_major=1; api.api_minor=20;
-    api.game="rac1"; api.version=disc->version; api.memory=ram.data();
+    api.size=sizeof api;api.api_major=1;api.api_minor=31;
+    api.game="rac1";api.version=disc->version;api.memory=ram.data();
     api.log=[](openrac_mod*,int,const char*){};
     api.setting_bool=[](openrac_mod*,const char*){return 1;};
-    api.setting_string=[](openrac_mod*,const char*){return controller_setting;};
-    api.input=[]() -> const openrac_input* {return &keyboard;};
     api.function=&function;
     api.hook=[](openrac_mod*,const char*,const char*,void*,void**) -> int {
-        check(false,"native capture hook should be untouched");
-        return -1;
+        check(false,"no native vendor hook should be taken in RAC1");return -1;
     };
-    api.hud_text_set=[](openrac_mod*,const openrac_hud_text* lines,int count) {
-        ++hud_calls;
-        hud.clear();
-        if (!lines || count==0) { ++hud_clears; return 0; }
-        check(count==5, "five layered HUD text passes");
-        hud.assign(lines,lines+count);
-        return 0;
+    api.hud_text_set=[](openrac_mod*,const openrac_hud_text*,int) -> int {
+        check(false,"legacy HUD should no longer be used");return -1;
     };
-    api.on_frame=[](openrac_mod*,openrac_frame_fn fn,void* user){frame_fn=fn;frame_user=user;return 0;};
-    api.on_pad=[](openrac_mod*,openrac_pad_fn fn,void* user){pad_fn=fn;pad_user=user;return 0;};
+    api.on_overlay_phases=[](openrac_mod*,openrac_overlay_fn fn,void* user,std::uint32_t phases)->int {
+        check(phases==OPENRAC_OVERLAY_MENU,"only vendor/menu frames requested");
+        overlay_fn=fn;overlay_user=user;return 0;
+    };
+    api.on_frame=[](openrac_mod*,openrac_frame_fn fn,void* user) {
+        frame_fn=fn;frame_user=user;return 0;
+    };
+    api.on_pad=[](openrac_mod*,openrac_pad_fn fn,void* user) {
+        pad_fn=fn;pad_user=user;return 0;
+    };
     api.loaded_level=[](){return 4;};
     api.relocate_data=[](openrac_gaddr a){return a;};
-    api.relocate_level_data=[](int level,openrac_gaddr a){check(level==0,"level-0 relocation");return a;};
+    api.relocate_level_data=[](int level,openrac_gaddr a) {
+        check(level==0,"level-0 relocation");return a;
+    };
     api.bolts=[](int add){balance+=add;return balance;};
     api.touch_hint=[](openrac_mod*,const char*,int on){visible=on!=0;};
     auto m=memory();
     m.write<std::int32_t>(disc->mode,5);
     m.write<std::int32_t>(disc->vendor,1);
-    m.write<openrac::gaddr>(disc->vendor+0x1C,0x6000u);
-    m.write<std::int32_t>(disc->vendor+0x210,1);
-    m.write<std::int32_t>(disc->vendor+0xD0,2);
-    m.write<std::int32_t>(disc->vendor+0xD4,1);
-    m.write<std::uint8_t>(disc->owned+2,1);
-    m.write<std::int32_t>(disc->ammo+8,3);
-    m.write<std::uint16_t>(disc->table+2*0x18+8,5);
-    m.write<std::uint16_t>(disc->table+2*0x18+0xA,10);
-    m.write<std::uint16_t>(disc->table+2*0x18+0xE,10);
+    m.write<openrac::gaddr>(disc->vendor+0x1Cu,0x6000u);
+    m.write<std::int32_t>(disc->vendor+0x210u,1);
+    m.write<std::int32_t>(disc->vendor+0xD0u,2);
+    m.write<std::int32_t>(disc->vendor+0xD4u,1);
+    m.write<std::uint8_t>(disc->owned+2u,1);
+    m.write<std::int32_t>(disc->ammo+8u,3);
+    m.write<std::uint16_t>(disc->table+2u*0x18u+8u,5);
+    m.write<std::uint16_t>(disc->table+2u*0x18u+0xAu,10);
+    m.write<std::uint16_t>(disc->table+2u*0x18u+0xEu,10);
     openrac::Mod mod(&api,reinterpret_cast<openrac_mod*>(1));
-    load_rac1(mod); tick();
-    check(hud_calls==1 && hud_clears==0,"initial quote published");
-    check_hud(pad_label+" Buy All - 35 bolts");
-    keyboard.keys[0x09]=OPENRAC_KEY_PRESSED;
-    tick(); check_hud("F Buy All - 35 bolts");
-    keyboard.keys[0x09]=0;
-    tick(); check(hud_calls==2,"unchanged HUD not repeatedly submitted");
-    check(visible && plays==0,"idle quote silent and touch action available");
-    pad(true); tick();
-    check(balance==65 && m.read<std::int32_t>(disc->ammo+8)==10 && plays==1 && last_sound==7,
-          "one paid refill and native purchase sound");
-    check_hud(pad_label+" Buy All - Bought");
-    tick(); check(plays==1 && balance==65,"holding Square does not buy twice");
-    pad(false); tick(); pad(true); tick();
-    check(balance==65 && plays==2 && last_sound==2,"full ammo rejects without charge");
-    pad(false); tick(); balance=1; m.write<std::int32_t>(disc->ammo+8,3);
-    pad(true); tick();
-    check(balance==1 && plays==3 && last_sound==2 && m.read<std::int32_t>(disc->ammo+8)==3,
-          "unaffordable ammo rejects without modifying ammo");
-    pad(false); tick(); balance=55; m.write<std::int32_t>(disc->vendor+0x40,1);
-    pad(true); tick();
-    check(balance==5 && m.read<std::int32_t>(disc->ammo+8)==8 && last_sound==7,
-          "partial PDA refill uses alternate price");
-    pad(false); tick(); m.write<std::int32_t>(disc->vendor+0x5C,2);
-    const int before=plays; pad(true); tick();
-    check(plays==before && balance==5 && !visible,"manual purchase dialog blocks transactions");
-    check(hud_clears==1 && hud.empty(),"manual dialog clears HUD");
-    m.write<std::int32_t>(disc->vendor+0x5C,0);
-    m.write<std::int32_t>(disc->mode,0); pad(false); tick(); pad(true); tick();
-    check(plays==before && balance==5 && hud_clears==1,"outside vendor blocks transactions");
-    std::cout << "RAC1 " << version << " " << controller_setting
-              << " runtime purchase, audio, input label and compact HUD checks passed\n";
+    load_rac1(mod);tick();
+    check(overlay_fn!=nullptr,"SDK menu overlay hook installed");
+    draw();check(draws==1,"vendor draws a panel");
+    expect(std::string(OPENRAC_UI_SQUARE)+" Buy all - 35 bolts");
+    draw(OPENRAC_OVERLAY_PLAYING);
+    check(draws==1,"no HUD outside menu phase");
+    check(visible&&plays==0,"idle quote silent and touch enabled");
+    pad(true);tick();draw();
+    check(balance==65&&m.read<std::int32_t>(disc->ammo+8u)==10&&plays==1&&last_sound==7,
+          "one purchase at normal price with native purchase sound");
+    expect(std::string(OPENRAC_UI_SQUARE)+" Buy all - Bought: 35 bolts");
+    tick();check(plays==1&&balance==65,"no purchase repeat while held");
+    pad(false);tick();pad(true);tick();draw();
+    check(balance==65&&plays==2&&last_sound==2,
+          "full ammo rejects without charging");
+    pad(false);tick();balance=1;m.write<std::int32_t>(disc->ammo+8u,3);
+    pad(true);tick();
+    check(balance==1&&plays==3&&last_sound==2&&
+          m.read<std::int32_t>(disc->ammo+8u)==3,
+          "unaffordable purchase does not modify ammo");
+    pad(false);tick();balance=55;m.write<std::int32_t>(disc->vendor+0x40u,1);
+    pad(true);tick();
+    check(balance==5&&m.read<std::int32_t>(disc->ammo+8u)==8&&last_sound==7,
+          "partial PDA purchase uses alternate price");
+    pad(false);tick();m.write<std::int32_t>(disc->vendor+0x5Cu,2);
+    const int before=plays;pad(true);tick();const int old_draws=draws;draw();
+    check(plays==before&&balance==5&&!visible,"purchase dialog blocks Buy All");
+    check(draws==old_draws,"prompt hidden in purchase dialog");
+    m.write<std::int32_t>(disc->vendor+0x5Cu,0);
+    m.write<std::int32_t>(disc->mode,0);pad(false);tick();pad(true);tick();draw();
+    check(plays==before&&balance==5&&draws==old_draws,
+          "outside vendor Buy All remains hidden");
+    std::cout<<"RAC1 "<<version
+             <<" purchases, native sounds, and SDK 1.31 menu panel passed\n";
 }
