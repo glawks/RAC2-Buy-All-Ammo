@@ -38,7 +38,7 @@ void publish_prompt() {
 // The native 512 x 448 vendor picture: between Buy and Exit monitors,
 // above the weapon carousel. Adapted from SDK 1.31's vendor-prompt example.
 constexpr float kPanelX = 176.0f;
-constexpr float kPanelY = 268.0f;
+constexpr float kPanelY = 274.0f;
 constexpr float kPanelW = 160.0f;
 constexpr float kPanelH = 28.0f;
 void draw_prompt(void*, const openrac_overlay* o) {
@@ -175,6 +175,6 @@ void load_rac1(openrac::Mod& mod) {
     mod.on_frame([&mod, disc] { tick(mod, *disc); });
     if (!mod.on_overlay_phases(draw_prompt, nullptr, OPENRAC_OVERLAY_MENU))
         throw openrac::Error("OpenRAC refused RAC1's vendor menu overlay");
-    mod.info(std::string("Vendor Buy All 0.2.2-dev.2: RAC1 SDK 1.31 native panel; HUD ")
+    mod.info(std::string("Vendor Buy All 0.2.2-dev.3: RAC1 SDK 1.31 native panel; HUD ")
              + (s_show ? "enabled" : "disabled"));
 }

@@ -38,13 +38,13 @@ void pad(bool down) {
 void tick(){frame_fn(frame_user);}
 void rect(void*,float x,float y,float w,float h,std::uint32_t rgba) {
     ++rects;
-    check(x==176.0f&&y==268.0f&&w==160.0f&&h>0,
+    check(x==176.0f&&y==274.0f&&w==160.0f&&h>0,
           "RAC1 panel between vendor controls, above weapon carousel");
     check((rgba&0xFFu)!=0,"panel is visibly translucent");
 }
 void overlay_text(void*,float x,float y,float height,std::uint32_t rgba,const char* str) {
     ++texts;rendered=str;
-    check(x>=176.0f&&x<=336.0f&&y>=268.0f&&y<296.0f,
+    check(x>=176.0f&&x<=336.0f&&y>=274.0f&&y<302.0f,
           "prompt remains within vendor panel");
     check(height>=10.0f&&height<=15.0f&&rgba==0xF4F6FFFFu,
           "one readable overlay text line");

@@ -1,6 +1,6 @@
 # Vendor Buy All
 
-**Development test build: 0.2.2-dev.2 — SDK 1.31 (not a stable release).** The public v0.2.1 release remains unchanged. [Latest development builds](https://github.com/glawks/Vendor-Buy-All/actions).
+**Development test build: 0.2.2-dev.3 — SDK 1.31 (not a stable release).** The public v0.2.1 release remains unchanged. [Latest development builds](https://github.com/glawks/Vendor-Buy-All/actions).
 
 Buy ammunition for all your owned weapons in one action at the Gadgetron vendor in **Ratchet & Clank (2002)** or the Megacorp vendor in **Ratchet & Clank 2: Going Commando**. No need to refill each weapon separately.
 
@@ -46,11 +46,13 @@ The panel shows the purchase cost, partial-refill quote, ammo-full status or ins
 
 ### Downloading this test build
 
-Open [GitHub Actions](https://github.com/glawks/Vendor-Buy-All/actions), choose the latest successful `dev` workflow run, download **Artifacts → mod-release**, extract the outer Actions ZIP, and install the inner `vendor-buy-all-0.2.2-dev.2.zip` with OpenRAC.
+Open [GitHub Actions](https://github.com/glawks/Vendor-Buy-All/actions), choose the latest successful `dev` workflow run, download **Artifacts → mod-release**, extract the outer Actions ZIP, and install the inner `vendor-buy-all-0.2.2-dev.3.zip` with OpenRAC.
 
 **Do not install it beside the upstream `ammo-max` mod**, which already includes Buy All. Disable the upstream copy when testing this standalone build, to avoid duplicated input handlers.
 
-## Development release notes — 0.2.2-dev.2
+## Development release notes — 0.2.2-dev.3
+
+- Lowered the RAC1 Buy All panel by six pixels (native Y 268 → 274) to give the rotating shop weapon more clearance.
 
 - Added RAC1 SDK 1.31 menu overlay with translucent background and native device-aware Square token; the confirmation is `AMMO BOUGHT FOR X BOLTS` without an action icon.
 - Removed the old manual RAC1 controller-label setting from this dev build.

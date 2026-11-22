@@ -290,7 +290,7 @@ void load_rac2(openrac::Mod& mod) {
     });
 
     mod.on_frame([&mod, disc] { tick(mod, *disc); });
-    mod.info("Vendor Buy All 0.2.2-dev.2: Square / Xbox X, vendor HUD and Android touch button");
+    mod.info("Vendor Buy All 0.2.2-dev.3: Square / Xbox X, vendor HUD and Android touch button");
 }
 } // namespace
 
@@ -301,4 +301,4 @@ void load(openrac::Mod& mod) {
     else throw openrac::Error("Vendor Buy All supports RAC1 and RAC2");
 }
 }
-OPENRAC_MOD_CPP("vendor-buy-all", "0.2.2-dev.2", load)
+OPENRAC_MOD_CPP("vendor-buy-all", "0.2.2-dev.3", load)
