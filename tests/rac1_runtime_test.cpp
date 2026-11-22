@@ -48,8 +48,13 @@ void overlay_text(void*,float x,float y,float height,std::uint32_t rgba,const ch
           "prompt remains within vendor panel");
     check(height>=10.0f&&height<=15.0f&&rgba==0xF4F6FFFFu,
           "one readable overlay text line");
-    check(!rendered.empty()&&rendered[0]==OPENRAC_UI_SQUARE[0],
-          "native Square button token, not a fixed pad/keyboard label");
+    check(!rendered.empty(),"nonempty menu overlay message");
+    if (rendered.find("Ammo bought for ") == std::string::npos)
+        check(rendered[0]==OPENRAC_UI_SQUARE[0],
+              "interactive prompts use the native Square button token");
+    else
+        check(rendered[0]!=OPENRAC_UI_SQUARE[0],
+              "purchase confirmation has no button icon");
 }
 float text_width(void*,float height,const char* str) {
     return static_cast<float>(std::strlen(str))*height*0.55f;
@@ -124,7 +129,7 @@ int main(int argc,char** argv) {
     pad(true);tick();draw();
     check(balance==65&&m.read<std::int32_t>(disc->ammo+8u)==10&&plays==1&&last_sound==7,
           "one purchase at normal price with native purchase sound");
-    expect(std::string(OPENRAC_UI_SQUARE)+" Buy all - Bought: 35 bolts");
+    expect("Ammo bought for 35 bolts");
     tick();check(plays==1&&balance==65,"no purchase repeat while held");
     pad(false);tick();pad(true);tick();draw();
     check(balance==65&&plays==2&&last_sound==2,

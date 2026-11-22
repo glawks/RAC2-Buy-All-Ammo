@@ -2,7 +2,7 @@
   "format": 2,
   "id": "vendor-buy-all",
   "name": "Vendor Buy All",
-  "version": "0.2.2-dev.1",
+  "version": "0.2.2-dev.2",
   "author": "glawks",
   "description": "Buy all ammunition for owned weapons at the Gadgetron or Megacorp vendor, with normal prices, device-aware prompts and purchase feedback.",
   "license": "MIT",

@@ -64,7 +64,7 @@ void draw_prompt(void*, const openrac_overlay* o) {
             std::snprintf(prompt, sizeof(prompt), OPENRAC_UI_SQUARE " Buy all - Not enough bolts");
             break;
         case Hint::Purchased:
-            std::snprintf(prompt, sizeof(prompt), OPENRAC_UI_SQUARE " Buy all - Bought: %u bolts", cost);
+            std::snprintf(prompt, sizeof(prompt), "Ammo bought for %u bolts", cost);
             break;
         default: return;
     }
@@ -175,6 +175,6 @@ void load_rac1(openrac::Mod& mod) {
     mod.on_frame([&mod, disc] { tick(mod, *disc); });
     if (!mod.on_overlay_phases(draw_prompt, nullptr, OPENRAC_OVERLAY_MENU))
         throw openrac::Error("OpenRAC refused RAC1's vendor menu overlay");
-    mod.info(std::string("Vendor Buy All 0.2.2-dev.1: RAC1 SDK 1.31 native panel; HUD ")
+    mod.info(std::string("Vendor Buy All 0.2.2-dev.2: RAC1 SDK 1.31 native panel; HUD ")
              + (s_show ? "enabled" : "disabled"));
 }
